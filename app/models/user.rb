@@ -1,4 +1,6 @@
 class User < ApplicationRecord
+  has_many :sessions, dependent: :destroy
+  has_many :devices, dependent: :destroy
   has_secure_password validations: false
   validates :username, uniqueness: true, presence: true, length: { minimum: 3, maximum: 20 }
   validates :email, uniqueness: true, presence: true, format: { with: URI::MailTo::EMAIL_REGEXP, message: "Invalid email format" }
