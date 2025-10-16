@@ -71,6 +71,7 @@
     <orderEntry type="library" scope="PROVIDED" name="io-console (v0.8.1, ruby-3.4.6-p54) [gem]" level="application" />
     <orderEntry type="library" scope="PROVIDED" name="irb (v1.15.2, ruby-3.4.6-p54) [gem]" level="application" />
     <orderEntry type="library" scope="PROVIDED" name="json (v2.15.1, ruby-3.4.6-p54) [gem]" level="application" />
+    <orderEntry type="library" scope="PROVIDED" name="jwt (v3.1.2, ruby-3.4.6-p54) [gem]" level="application" />
     <orderEntry type="library" scope="PROVIDED" name="kamal (v2.7.0, ruby-3.4.6-p54) [gem]" level="application" />
     <orderEntry type="library" scope="PROVIDED" name="language_server-protocol (v3.17.0.5, ruby-3.4.6-p54) [gem]" level="application" />
     <orderEntry type="library" scope="PROVIDED" name="lint_roller (v1.1.0, ruby-3.4.6-p54) [gem]" level="application" />
