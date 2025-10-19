@@ -72,10 +72,10 @@ class AuthController < ApplicationController
       session = Session.new(user: user)
       if session.save
         access_token = JWTUtils.encode_access(
-          { sub: user.id, jti: session.jti, device_id: session.device_id, exp: ACCESS_EXP_MIN.minutes.from_now.to_i }
+          { sub: user.id, jti: session.jti, session_key: session.session_key, exp: ACCESS_EXP_MIN.minutes.from_now.to_i }
         )
         refresh_token = JWTUtils.encode_refresh(
-          { sub: user.id, jti: session.jti, device_id: session.device_id, exp: session.expires_at.to_i }
+          { sub: user.id, jti: session.jti, session_key: session.session_key, exp: session.expires_at.to_i }
         )
         set_auth_cookies(access_token, refresh_token)
         render json: { user_id: user.id, access_token: access_token, refresh_token: refresh_token, user: user.as_json(except: [:password_digest]) }, status: :created
