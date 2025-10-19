@@ -4,9 +4,6 @@ module Authentication
   extend ActiveSupport::Concern
 
   def authorized?
-    if request.headers["X-Service-Token"] == ENV["SERVICE_TOKEN"]
-      return true
-    end
     access_token = request.headers["Authorization"]&.split(" ")&.last || cookies.encrypted[:access_token]
     refresh_token = request.headers["Refresh-Token"]&.split(" ")&.last || cookies.encrypted[:refresh_token]
     return false unless access_token && refresh_token
