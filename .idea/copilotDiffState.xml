@@ -12,15 +12,6 @@
             </PendingDiffInfo>
           </value>
         </entry>
-        <entry key="$PROJECT_DIR$/app/models/session.rb">
-          <value>
-            <PendingDiffInfo>
-              <option name="filePath" value="$PROJECT_DIR$/app/models/session.rb" />
-              <option name="originalContent" value="class Session &lt; ApplicationRecord&#10;  belongs_to :user, required: true&#10;  belongs_to :device, optional: true&#10;  before_create :set_initial_values&#10;  enum :status, %i[active revoked]&#10;  attribute :status, default: &quot;active&quot;&#10;  private&#10;&#10;  def set_initial_values&#10;    self.jti ||= SecureRandom.uuid&#10;    self.session_key ||= SecureRandom.uuid&#10;    self.expires_at ||= ENV[&quot;JWT_REFRESH_EXPIRATION_DAYS&quot;].to_i.days.from_now&#10;  end&#10;end&#10;" />
-              <option name="updatedContent" value="class Session &lt; ApplicationRecord&#10;  belongs_to :user, required: true&#10;  belongs_to :device, optional: true&#10;  before_create :set_initial_values&#10;  enum :status, %i[active revoked]&#10;  attribute :status, default: &quot;active&quot;&#10;  private&#10;&#10;  def set_initial_values&#10;    self.jti ||= SecureRandom.uuid&#10;    self.session_key ||= SecureRandom.uuid&#10;    self.expires_at ||= ENV[&quot;JWT_REFRESH_EXPIRATION_DAYS&quot;].to_i.days.from_now&#10;  end&#10;end" />
-            </PendingDiffInfo>
-          </value>
-        </entry>
       </map>
     </option>
   </component>

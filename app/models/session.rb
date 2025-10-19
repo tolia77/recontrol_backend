@@ -2,8 +2,9 @@ class Session < ApplicationRecord
   belongs_to :user, required: true
   belongs_to :device, optional: true
   before_create :set_initial_values
-  enum :status, %i[active revoked]
+
   attribute :status, default: "active"
+
   private
 
   def set_initial_values

@@ -93,49 +93,78 @@ class AuthController < ApplicationController
   end
 
   def refresh
-    refresh_token = params[:refresh_token].to_s.split.last || cookies.encrypted[:refresh_token]
+    refresh_token = params[:refresh_token].to_s.split.last.presence ||
+                    request.headers["Refresh-Token"]&.split(" ")&.last ||
+                    cookies.encrypted[:refresh_token]
+
+    unless refresh_token.present?
+      render json: { error: "Invalid refresh token" }, status: :unauthorized
+      return
+    end
+
     begin
       decoded = JWTUtils.decode_refresh(refresh_token)
-      user_id = decoded[0]["sub"]
-      jti = decoded[0]["jti"]
-      session_key = decoded[0]["session_key"]
-      p "DECODED DATA:"
-      p user_id
-      p jti
-      p session_key
+      payload = decoded[0]
+      user_id = payload["sub"]
+      jti = payload["jti"]
+      session_key = payload["session_key"]
+      device_id_from_token = payload["device_id"]
 
       session = Session.find_by(user_id: user_id, jti: jti, session_key: session_key)
-      p "OLD SESSION: #{session.inspect}"
       if session
-        # DISABLE FOR NOW
         if session.status == "revoked"
           Session.where(user_id: user_id).update_all(status: "revoked")
           render json: { error: "Session revoked" }, status: :unauthorized
-        else
-          if session.expires_at > Time.current
-            session.update(status: "revoked")
-            new_session = Session.new(user_id: user_id, device_id: session.session_key)
-            if new_session.save
-              p "NEW SESSION: #{new_session.inspect}"
-              access_token = JWTUtils.encode_access(
-                { sub: user_id, jti: new_session.jti, session_key: new_session.session_key, exp: ACCESS_EXP_MIN.minutes.from_now.to_i }
-              )
-              refresh_token = JWTUtils.encode_refresh(
-                { sub: user_id, jti: new_session.jti, session_key: new_session.session_key, exp: new_session.expires_at.to_i }
-              )
-              set_auth_cookies(access_token, refresh_token)
-              render json: { access_token: access_token, refresh_token: refresh_token }, status: :ok
-            else
-              render json: { error: "Failed to create new session" }, status: :internal_server_error
+          return
+        end
+
+        if session.expires_at > Time.current
+          # Ensure desktop token device_id matches persisted session device if provided
+          if device_id_from_token.present?
+            if session.device_id.blank? || session.device_id != device_id_from_token
+              render json: { error: "Device mismatch" }, status: :unauthorized
+              return
             end
-          else
-            render json: { error: "Session expired or not found" }, status: :unauthorized
           end
+
+          session.update(status: "revoked")
+          new_session = Session.new(
+            user_id: user_id,
+            client_type: session.client_type,
+            device_id: session.device_id
+          )
+          if new_session.save
+            access_payload = {
+              sub: user_id,
+              jti: new_session.jti,
+              session_key: new_session.session_key,
+              exp: ACCESS_EXP_MIN.minutes.from_now.to_i
+            }
+            refresh_payload = {
+              sub: user_id,
+              jti: new_session.jti,
+              session_key: new_session.session_key,
+              exp: new_session.expires_at.to_i
+            }
+            if new_session.client_type == "desktop" && new_session.device_id.present?
+              access_payload[:device_id] = new_session.device_id
+              refresh_payload[:device_id] = new_session.device_id
+            end
+
+            access_token = JWTUtils.encode_access(access_payload)
+            new_refresh_token = JWTUtils.encode_refresh(refresh_payload)
+            set_auth_cookies(access_token, new_refresh_token)
+            render json: { access_token: access_token, refresh_token: new_refresh_token }, status: :ok
+          else
+            render json: { error: "Failed to create new session" }, status: :internal_server_error
+          end
+        else
+          render json: { error: "Session expired or not found" }, status: :unauthorized
         end
       else
         render json: { error: "Session not found" }, status: :unauthorized
       end
-    rescue JWT::DecodeError
+    rescue JWT::DecodeError, JWT::ExpiredSignature
       render json: { error: "Invalid refresh token" }, status: :unauthorized
     end
   end

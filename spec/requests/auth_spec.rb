@@ -135,4 +135,133 @@ RSpec.describe "Auth", type: :request do
       expect(session.device_id).to be_nil
     end
   end
+
+  describe "POST /auth/refresh" do
+    it "rotates tokens for web client successfully" do
+      post "/auth/login", params: { email: user.email, password: password, client_type: "web" }
+      expect(response).to have_http_status(:ok)
+      body1 = JSON.parse(response.body)
+      refresh1 = body1["refresh_token"]
+      payload1 = JWTUtils.decode_refresh(refresh1)[0]
+      old_jti = payload1["jti"]
+
+      post "/auth/refresh", headers: { "Refresh-Token" => "Bearer #{refresh1}" }
+      expect(response).to have_http_status(:ok)
+      body2 = JSON.parse(response.body)
+      access2 = body2["access_token"]
+      refresh2 = body2["refresh_token"]
+
+      access_payload2 = JWTUtils.decode_access(access2)[0]
+      refresh_payload2 = JWTUtils.decode_refresh(refresh2)[0]
+
+      expect(access_payload2["device_id"]).to be_nil
+      expect(refresh_payload2["jti"]).not_to eq(old_jti)
+
+      old_session = Session.find_by(jti: old_jti)
+      new_session = Session.find_by(jti: refresh_payload2["jti"])
+      expect(old_session.status).to eq("revoked")
+      expect(new_session.status).to eq("active")
+      expect(new_session.client_type).to eq("web")
+      expect(new_session.device_id).to be_nil
+    end
+
+    it "rotates tokens for desktop client and preserves device_id" do
+      device = Device.create!(user: user, name: "Work PC")
+      post "/auth/login", params: { email: user.email, password: password, client_type: "desktop", device_id: device.id }
+      expect(response).to have_http_status(:ok)
+      body1 = JSON.parse(response.body)
+      refresh1 = body1["refresh_token"]
+      payload1 = JWTUtils.decode_refresh(refresh1)[0]
+      old_jti = payload1["jti"]
+      expect(payload1["device_id"]).to eq(device.id)
+
+      post "/auth/refresh", headers: { "Refresh-Token" => "Bearer #{refresh1}" }
+      expect(response).to have_http_status(:ok)
+      body2 = JSON.parse(response.body)
+      access2 = body2["access_token"]
+      refresh2 = body2["refresh_token"]
+
+      access_payload2 = JWTUtils.decode_access(access2)[0]
+      refresh_payload2 = JWTUtils.decode_refresh(refresh2)[0]
+
+      expect(access_payload2["device_id"]).to eq(device.id)
+      expect(refresh_payload2["device_id"]).to eq(device.id)
+
+      old_session = Session.find_by(jti: old_jti)
+      new_session = Session.find_by(jti: refresh_payload2["jti"])
+      expect(old_session.status).to eq("revoked")
+      expect(new_session.status).to eq("active")
+      expect(new_session.client_type).to eq("desktop")
+      expect(new_session.device_id).to eq(device.id)
+    end
+
+    it "returns 401 when refresh token is missing" do
+      post "/auth/refresh"
+      expect(response).to have_http_status(:unauthorized)
+      expect(JSON.parse(response.body)["error"]).to eq("Invalid refresh token")
+    end
+
+    it "returns 401 for invalid refresh token" do
+      post "/auth/refresh", params: { refresh_token: "invalid.token" }
+      expect(response).to have_http_status(:unauthorized)
+      expect(JSON.parse(response.body)["error"]).to eq("Invalid refresh token")
+    end
+
+    it "returns 401 when session is expired" do
+      post "/auth/login", params: { email: user.email, password: password, client_type: "web" }
+      body = JSON.parse(response.body)
+      refresh_token = body["refresh_token"]
+      payload = JWTUtils.decode_refresh(refresh_token)[0]
+      sess = Session.find_by(user_id: payload["sub"], jti: payload["jti"], session_key: payload["session_key"])
+      sess.update!(expires_at: 1.minute.ago)
+
+      post "/auth/refresh", headers: { "Refresh-Token" => "Bearer #{refresh_token}" }
+      expect(response).to have_http_status(:unauthorized)
+      expect(JSON.parse(response.body)["error"]).to eq("Session expired or not found")
+    end
+
+    it "returns 401 when using an already-rotated (revoked) refresh token" do
+      post "/auth/login", params: { email: user.email, password: password, client_type: "web" }
+      body1 = JSON.parse(response.body)
+      refresh1 = body1["refresh_token"]
+
+      # First refresh rotates the session
+      post "/auth/refresh", headers: { "Refresh-Token" => "Bearer #{refresh1}" }
+      expect(response).to have_http_status(:ok)
+
+      # Reuse the old refresh token -> revoked
+      post "/auth/refresh", headers: { "Refresh-Token" => "Bearer #{refresh1}" }
+      expect(response).to have_http_status(:unauthorized)
+      expect(JSON.parse(response.body)["error"]).to eq("Session revoked")
+    end
+
+    it "returns 401 when refresh token device_id does not match session device (tampered token)" do
+      device = Device.create!(user: user, name: "Home PC")
+      other_device = Device.create!(user: user, name: "Other PC")
+      post "/auth/login", params: { email: user.email, password: password, client_type: "desktop", device_id: device.id }
+      body = JSON.parse(response.body)
+      refresh_token = body["refresh_token"]
+      payload = JWTUtils.decode_refresh(refresh_token)[0]
+      tampered = payload.merge("device_id" => other_device.id)
+      tampered_token = JWTUtils.encode_refresh(tampered)
+
+      post "/auth/refresh", headers: { "Refresh-Token" => "Bearer #{tampered_token}" }
+      expect(response).to have_http_status(:unauthorized)
+      expect(JSON.parse(response.body)["error"]).to eq("Device mismatch")
+    end
+
+    it "returns 401 when session not found for given token data" do
+      post "/auth/login", params: { email: user.email, password: password, client_type: "web" }
+      body = JSON.parse(response.body)
+      refresh_token = body["refresh_token"]
+      payload = JWTUtils.decode_refresh(refresh_token)[0]
+
+      # Delete the backing session
+      Session.find_by(user_id: payload["sub"], jti: payload["jti"], session_key: payload["session_key"])&.destroy!
+
+      post "/auth/refresh", headers: { "Refresh-Token" => "Bearer #{refresh_token}" }
+      expect(response).to have_http_status(:unauthorized)
+      expect(JSON.parse(response.body)["error"]).to eq("Session not found")
+    end
+  end
 end

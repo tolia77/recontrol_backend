@@ -19,3 +19,5 @@ module JWTUtils
     JWT.decode(token, ENV["JWT_REFRESH_SECRET"], true, { algorithm: "HS256" })
   end
 end
+
+
