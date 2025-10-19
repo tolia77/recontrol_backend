@@ -93,6 +93,51 @@ class AuthController < ApplicationController
   end
 
   def refresh
+    refresh_token = params[:refresh_token].to_s.split.last || cookies.encrypted[:refresh_token]
+    begin
+      decoded = JWTUtils.decode_refresh(refresh_token)
+      user_id = decoded[0]["sub"]
+      jti = decoded[0]["jti"]
+      session_key = decoded[0]["session_key"]
+      p "DECODED DATA:"
+      p user_id
+      p jti
+      p session_key
+
+      session = Session.find_by(user_id: user_id, jti: jti, session_key: session_key)
+      p "OLD SESSION: #{session.inspect}"
+      if session
+        # DISABLE FOR NOW
+        if session.status == "revoked"
+          Session.where(user_id: user_id).update_all(status: "revoked")
+          render json: { error: "Session revoked" }, status: :unauthorized
+        else
+          if session.expires_at > Time.current
+            session.update(status: "revoked")
+            new_session = Session.new(user_id: user_id, device_id: session.session_key)
+            if new_session.save
+              p "NEW SESSION: #{new_session.inspect}"
+              access_token = JWTUtils.encode_access(
+                { sub: user_id, jti: new_session.jti, session_key: new_session.session_key, exp: ACCESS_EXP_MIN.minutes.from_now.to_i }
+              )
+              refresh_token = JWTUtils.encode_refresh(
+                { sub: user_id, jti: new_session.jti, session_key: new_session.session_key, exp: new_session.expires_at.to_i }
+              )
+              set_auth_cookies(access_token, refresh_token)
+              render json: { access_token: access_token, refresh_token: refresh_token }, status: :ok
+            else
+              render json: { error: "Failed to create new session" }, status: :internal_server_error
+            end
+          else
+            render json: { error: "Session expired or not found" }, status: :unauthorized
+          end
+        end
+      else
+        render json: { error: "Session not found" }, status: :unauthorized
+      end
+    rescue JWT::DecodeError
+      render json: { error: "Invalid refresh token" }, status: :unauthorized
+    end
   end
 
   private
