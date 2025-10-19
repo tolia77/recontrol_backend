@@ -264,4 +264,61 @@ RSpec.describe "Auth", type: :request do
       expect(JSON.parse(response.body)["error"]).to eq("Session not found")
     end
   end
+
+  describe "POST /auth/logout" do
+    it "revokes session when access token provided" do
+      post "/auth/login", params: { email: user.email, password: password, client_type: "web" }
+      body = JSON.parse(response.body)
+      access = body["access_token"]
+      payload = JWTUtils.decode_access(access)[0]
+      session = Session.find_by(jti: payload["jti"])
+
+      post "/auth/logout", headers: { "Authorization" => "Bearer #{access}" }
+      expect(response).to have_http_status(:ok)
+      expect(JSON.parse(response.body)["message"]).to eq("Logged out")
+
+      session.reload
+      expect(session.status).to eq("revoked")
+    end
+
+    it "revokes session when only refresh token provided" do
+      post "/auth/login", params: { email: user.email, password: password, client_type: "web" }
+      body = JSON.parse(response.body)
+      refresh = body["refresh_token"]
+      payload = JWTUtils.decode_refresh(refresh)[0]
+      session = Session.find_by(jti: payload["jti"])
+
+      post "/auth/logout", headers: { "Refresh-Token" => "Bearer #{refresh}" }
+      expect(response).to have_http_status(:ok)
+      expect(JSON.parse(response.body)["message"]).to eq("Logged out")
+
+      session.reload
+      expect(session.status).to eq("revoked")
+    end
+
+    it "is idempotent (second logout still returns ok)" do
+      post "/auth/login", params: { email: user.email, password: password, client_type: "web" }
+      body = JSON.parse(response.body)
+      access = body["access_token"]
+
+      post "/auth/logout", headers: { "Authorization" => "Bearer #{access}" }
+      expect(response).to have_http_status(:ok)
+
+      post "/auth/logout", headers: { "Authorization" => "Bearer #{access}" }
+      expect(response).to have_http_status(:ok)
+      expect(JSON.parse(response.body)["message"]).to eq("Logged out")
+    end
+
+    it "returns 401 when no valid token supplied" do
+      post "/auth/logout"
+      expect(response).to have_http_status(:unauthorized)
+      expect(JSON.parse(response.body)["error"]).to eq("Invalid token")
+    end
+
+    it "returns 401 when token is invalid" do
+      post "/auth/logout", headers: { "Authorization" => "Bearer invalid.token" }
+      expect(response).to have_http_status(:unauthorized)
+      expect(JSON.parse(response.body)["error"]).to eq("Invalid token")
+    end
+  end
 end

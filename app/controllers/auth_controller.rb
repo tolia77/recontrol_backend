@@ -90,6 +90,45 @@ class AuthController < ApplicationController
   end
 
   def logout
+    access_token = request.headers["Authorization"]&.split(" ")&.last || cookies.encrypted[:access_token]
+    refresh_token = request.headers["Refresh-Token"]&.split(" ")&.last || cookies.encrypted[:refresh_token]
+
+    unless access_token.present? || refresh_token.present?
+      render json: { error: "Invalid token" }, status: :unauthorized
+      return
+    end
+
+    payload = nil
+    begin
+      payload = JWTUtils.decode_access(access_token)[0] if access_token.present?
+    rescue JWT::DecodeError, JWT::ExpiredSignature
+      payload = nil
+    end
+
+    if payload.nil? && refresh_token.present?
+      begin
+        payload = JWTUtils.decode_refresh(refresh_token)[0]
+      rescue JWT::DecodeError, JWT::ExpiredSignature
+        payload = nil
+      end
+    end
+
+    if payload.nil?
+      render json: { error: "Invalid token" }, status: :unauthorized
+      return
+    end
+
+    user_id = payload["sub"]
+    jti = payload["jti"]
+    session_key = payload["session_key"]
+
+    session = Session.find_by(user_id: user_id, jti: jti, session_key: session_key)
+    session&.update(status: "revoked")
+
+    cookies.delete(:access_token)
+    cookies.delete(:refresh_token)
+
+    render json: { message: "Logged out" }, status: :ok
   end
 
   def refresh
