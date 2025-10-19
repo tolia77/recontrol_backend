@@ -1,4 +1,10 @@
 Rails.application.routes.draw do
+  resources :devices do
+    collection do
+      get :me
+    end
+  end
+
   post "auth/login"
   post "auth/register"
   post "auth/logout"
