@@ -1,11 +1,20 @@
 FactoryBot.define do
   factory :session do
-    user { nil }
+    association :user
     device { nil }
-    jti { "MyString" }
-    session_key { "MyString" }
-    client_type { "MyString" }
-    status { "MyString" }
-    expires_at { "2025-10-16 19:42:49" }
+    client_type { "web" }
+    status { "active" }
+    # jti, session_key, and expires_at are set by model callbacks
+
+    trait :desktop do
+      client_type { "desktop" }
+      after(:build) do |session|
+        session.device ||= build(:device, user: session.user)
+      end
+    end
+
+    trait :revoked do
+      status { "revoked" }
+    end
   end
 end

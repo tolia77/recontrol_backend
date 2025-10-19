@@ -46,7 +46,7 @@ module Authentication
   def current_user
     return unless authorized?
 
-    access_token = cookies.encrypted[:access_token] || request.headers["Authorization"]&.split(" ")&.last
+    access_token = request.headers["Authorization"]&.split(" ")&.last || cookies.encrypted[:access_token]
     begin
       payload = JWTUtils.decode_access(access_token)
       User.find_by(id: payload[0]["sub"])

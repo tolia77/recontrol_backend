@@ -1,3 +1,5 @@
+require_dependency Rails.root.join("app", "utils", "jwt_utils.rb").to_s
+
 class ApplicationController < ActionController::API
   include JWTUtils
   include ActionController::Cookies

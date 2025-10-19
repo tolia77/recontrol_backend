@@ -1,8 +1,12 @@
 FactoryBot.define do
   factory :device do
-    user { nil }
-    name { "MyString" }
-    status { "MyString" }
-    last_active_at { "2025-10-16 19:42:27" }
+    association :user
+    sequence(:name) { |n| "Device #{n}" }
+    status { "active" }
+    last_active_at { Time.current }
+
+    trait :inactive do
+      status { "inactive" }
+    end
   end
 end
