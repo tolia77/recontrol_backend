@@ -7,7 +7,7 @@ class AuthController < ApplicationController
     password = params[:password]
     client_type = params[:client_type] || "web"
     device_id = params[:device_id]
-    device_name = params[:device_name]
+    device_name = params[:device_name] || "New device"
     @user = User.find_by(email: email)
     if @user&.authenticate(password)
       if client_type == "desktop"

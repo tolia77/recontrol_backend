@@ -1,7 +1,7 @@
 class CreateSessions < ActiveRecord::Migration[8.0]
   def change
     # Use UUID primary key for sessions and reference user/device by UUID
-    create_table :sessions, id: :uuid do |t|
+    create_table :sessions, id: :uuid, default: 'gen_random_uuid()' do |t|
       t.references :user, null: false, foreign_key: true, type: :uuid
       t.references :device, null: true, foreign_key: true, type: :uuid
       t.string :jti
