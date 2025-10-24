@@ -19,8 +19,24 @@ module ApplicationCable
       self.current_user = session.user
       self.current_device = session.device
       self.client_type = session.client_type
+
+      # Set desktop device status to active while connected
+      if client_type == "desktop" && current_device
+        current_device.update(status: "active")
+      end
     rescue JWT::DecodeError, JWT::ExpiredSignature
       reject_unauthorized_connection
+    end
+
+    # When a connection is closed, update desktop device last seen and mark inactive.
+    def disconnect
+      # Only handle desktop client_type; do nothing for web
+      if client_type == "desktop" && current_device
+        current_device.update(
+          last_active_at: Time.current,
+          status: "inactive"
+        )
+      end
     end
   end
 end
