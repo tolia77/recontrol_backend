@@ -55,7 +55,8 @@ class AuthController < ApplicationController
         refresh_token = JWTUtils.encode_refresh(refresh_payload)
 
         set_auth_cookies(access_token, refresh_token)
-        res = { user_id: @user.id, access_token: access_token, refresh_token: refresh_token }
+        # return tokens in response body prefixed with "Bearer "
+        res = { user_id: @user.id, access_token: format_token(access_token), refresh_token: format_token(refresh_token) }
         res["device_id"] = @device.id if @device
         render json: res, status: :ok
       else
@@ -79,7 +80,7 @@ class AuthController < ApplicationController
           { sub: @user.id, jti: session.jti, session_key: session.session_key, exp: session.expires_at.to_i }
         )
         set_auth_cookies(access_token, refresh_token)
-        render json: { user_id: @user.id, access_token: access_token, refresh_token: refresh_token, user: @user.as_json(except: [:password_digest]) }, status: :created
+        render json: { user_id: @user.id, access_token: format_token(access_token), refresh_token: format_token(refresh_token), user: @user.as_json(except: [:password_digest]) }, status: :created
       else
         @user.destroy
         render json: { error: "Failed to create session" }, status: :internal_server_error
@@ -193,7 +194,8 @@ class AuthController < ApplicationController
             access_token = JWTUtils.encode_access(access_payload)
             new_refresh_token = JWTUtils.encode_refresh(refresh_payload)
             set_auth_cookies(access_token, new_refresh_token)
-            render json: { access_token: access_token, refresh_token: new_refresh_token }, status: :ok
+            # return tokens in response body prefixed with "Bearer "
+            render json: { access_token: format_token(access_token), refresh_token: format_token(new_refresh_token) }, status: :ok
           else
             render json: { error: "Failed to create new session" }, status: :internal_server_error
           end
@@ -218,7 +220,7 @@ class AuthController < ApplicationController
     cookies.encrypted[:access_token] = {
       value: access_token,
       httponly: true,
-      secure: ENV["USE_SECURE_COOKIES"] == "true",
+      secure: false,
       same_site: :none,
       expires: ACCESS_EXP_MIN.minutes.from_now
     }
@@ -226,9 +228,14 @@ class AuthController < ApplicationController
     cookies.encrypted[:refresh_token] = {
       value: refresh_token,
       httponly: true,
-      secure: ENV["USE_SECURE_COOKIES"] == "true",
+      secure: false,
       same_site: :none,
       expires: REFRESH_EXP_DAYS.days.from_now
     }
+  end
+
+  # Prefix token strings returned in response body with "Bearer "
+  def format_token(token)
+    "Bearer #{token}"
   end
 end

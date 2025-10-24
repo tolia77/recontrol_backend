@@ -4,6 +4,11 @@
 # to make the web console appear.
 development:
   adapter: async
+  # no url needed since async runs in-process
+  allowed_request_origins:
+    - http://localhost:5175
+    - http://127.0.0.1:5175
+
 
 test:
   adapter: test

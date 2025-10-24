@@ -3,9 +3,9 @@ module ApplicationCable
     identified_by :current_user, :client_type, :current_device
 
     def connect
-      token = request.params[:token] || request.headers["Authorization"]&.split(" ")&.last
+      token = request.params[:access_token]&.split(" ")&.last
+      p token
       reject_unauthorized_connection unless token
-
       payload = JWTUtils.decode_access(token)[0]
       session = Session.find_by(
         user_id: payload["sub"],
@@ -14,7 +14,7 @@ module ApplicationCable
         status: "active"
       )
 
-      reject_unauthorized_connection unless session && session.expires_at > Time.current
+      reject_unauthorized_connection unless session && session.expires_at && session.expires_at > Time.current
 
       self.current_user = session.user
       self.current_device = session.device
