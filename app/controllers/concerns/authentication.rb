@@ -5,8 +5,6 @@ module Authentication
 
   def authorized?
     access_token = request.headers["Authorization"]&.split(" ")&.last || cookies.encrypted[:access_token]
-    refresh_token = request.headers["Refresh-Token"]&.split(" ")&.last || cookies.encrypted[:refresh_token]
-    return false unless access_token && refresh_token
     begin
       # Verify access token first (faster check)
       access_payload = JWTUtils.decode_access(access_token)
@@ -20,12 +18,6 @@ module Authentication
         status: "active"
       )
       return true if session.present? && session.expires_at > Time.current
-
-      # If access token is invalid, try refresh token
-      refresh_payload = JWTUtils.decode_refresh(refresh_token)
-      user_id = refresh_payload[0]["sub"]
-      jti = refresh_payload[0]["jti"]
-      session_key = refresh_payload[0]["session_key"]
 
       session = Session.find_by(
         user_id: user_id,
