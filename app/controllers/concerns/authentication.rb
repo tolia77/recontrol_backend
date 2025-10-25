@@ -5,6 +5,7 @@ module Authentication
 
   def authorized?
     access_token = request.headers["Authorization"]&.split(" ")&.last || cookies.encrypted[:access_token]
+    p "ACCESS TOKEN: #{access_token}"
     begin
       # Verify access token first (faster check)
       access_payload = JWTUtils.decode_access(access_token)
@@ -17,17 +18,11 @@ module Authentication
         session_key: session_key,
         status: "active"
       )
-      return true if session.present? && session.expires_at > Time.current
-
-      session = Session.find_by(
-        user_id: user_id,
-        jti: jti,
-        session_key: session_key,
-        status: "active"
-      )
-
+      p "ACCESS PAYLOAD: #{access_payload}"
+      p "SESSION: #{session.inspect}"
       session.present? && session.expires_at > Time.current
     rescue JWT::DecodeError, JWT::ExpiredSignature
+      p "Token decode error or expired signature"
       false
     end
   end
