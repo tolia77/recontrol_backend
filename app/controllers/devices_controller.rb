@@ -27,7 +27,7 @@ class DevicesController < ApplicationController
     total = devices.count
     devices = devices.order(created_at: :desc).offset((page - 1) * per_page).limit(per_page)
 
-    render json: { devices: devices.as_json, meta: { page: page, per_page: per_page, total: total } }, status: :ok
+    render json: devices, meta: { page: page, per_page: per_page, total: total }, status: :ok
   end
 
   # GET /devices/me
@@ -47,7 +47,7 @@ class DevicesController < ApplicationController
     total = devices.count
     devices = devices.order(created_at: :desc).offset((page - 1) * per_page).limit(per_page)
 
-    render json: { devices: devices.as_json, meta: { page: page, per_page: per_page, total: total } }, status: :ok
+    render json: devices, meta: { page: page, per_page: per_page, total: total }, status: :ok
   end
 
   # GET /devices/:id
