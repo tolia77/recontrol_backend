@@ -153,7 +153,7 @@ class AuthController < ApplicationController
       session = Session.find_by(user_id: user_id, jti: jti, session_key: session_key)
       if session
         if session.status == "revoked"
-          Session.where(user_id: user_id).update_all(status: "revoked")
+          Session.where(user_id: user_id, session_key: session_key).update_all(status: "revoked")
           render json: { error: "Session revoked" }, status: :unauthorized
           return
         end
