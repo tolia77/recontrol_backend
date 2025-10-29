@@ -32,5 +32,7 @@ module RecontrolBackend
     config.generators do |g|
       g.orm :active_record, primary_key_type: :uuid
     end
+
+    config.hosts << "dev3000.kokhan.me"
   end
 end

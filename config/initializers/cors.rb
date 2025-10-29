@@ -8,7 +8,7 @@
 Rails.application.config.middleware.insert_before 0, Rack::Cors do
   allow do
     # Allow requests from any origin in development. Change to specific origins in production.
-    origins "127.0.0.1:5175", "localhost:5175"
+    origins "127.0.0.1:5175", "localhost:5175", "dev5175.kokhan.me"
 
     resource "*",
       headers: :any,
