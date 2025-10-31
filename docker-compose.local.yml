@@ -1,0 +1,49 @@
+# version: '3.8' <-- This line is obsolete and can be removed
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: build
+    volumes:
+      - .:/rails
+      - bundle_gems:/usr/local/bundle
+    ports:
+      - "3000:3000"
+
+    # Load all variables from the .env.development file
+    env_file: .env.development
+
+    # Override/set specific variables for the container environment
+    environment:
+      RAILS_ENV: development
+      # Override the host to use the Docker service name 'db'
+      DB_DEV_HOST: db
+      # Set DATABASE_URL (if your app uses it)
+      DATABASE_URL: "postgres://${DB_DEV_USER}:${DB_DEV_PASSWORD}@db:5432/${DB_DEV_NAME}"
+
+    # --- UPDATED COMMAND ---
+    # This now *only* removes the old server.pid and starts the server.
+    command: /bin/bash -c "rm -f tmp/pids/server.pid && ./bin/rails s -b 0.0.0.0"
+
+    depends_on:
+      - db
+
+  db:
+    image: postgres:16-alpine
+    # Load variables to map them
+    env_file: .env.development
+
+    # The postgres image needs POSTGRES_USER, POSTGRES_PASSWORD, etc.
+    # We map your custom variables to what the image expects.
+    environment:
+      POSTGRES_USER: ${DB_DEV_USER}
+      POSTGRES_PASSWORD: ${DB_DEV_PASSWORD}
+      POSTGRES_DB: ${DB_DEV_NAME}
+
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+
+volumes:
+  postgres_data_dev:
+  bundle_gems:

@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    image: recontrol_backend
+    ports:
+      - "80:80"
+
+    env_file: .env.production
+
+
+    environment:
+      RAILS_ENV: production
+      DATABASE_URL: "postgres://${DB_PROD_USER}:${DB_PROD_PASSWORD}@${DB_PROD_HOST}:${DB_PROD_PORT}/${DB_PROD_NAME}"
+
+    volumes:
+      - rails_storage:/rails/storage
+
+volumes:
+  rails_storage:
