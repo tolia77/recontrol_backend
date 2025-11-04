@@ -9,10 +9,10 @@ class CommandChannel < ApplicationCable::Channel
 
   def receive(data)
     id = data["id"]
-    command = data["command"]
-    payload = data["payload"]
 
     if connection.client_type == "web"
+      command = data["command"]
+      payload = data["payload"]
       ActionCable.server.broadcast("device_#{connection.target_device.id}", {
         from: connection.current_user.username,
         id: id,
@@ -20,14 +20,18 @@ class CommandChannel < ApplicationCable::Channel
         payload: payload
       })
     elsif connection.client_type == "desktop"
+      status = data["status"]
+      result = data["result"]
+      error = data["error"]
+      response_payload = {
+        id: id,
+        status: status,
+      }
+      response_payload[:result] = result if result
+      response_payload[:error] = error if error
       ActionCable.server.broadcast(
         "user_#{connection.current_user.id}_to_#{connection.current_device.id}",
-        {
-          id: id,
-          from: connection.current_device.name,
-          command: command,
-          payload: payload
-        }
+        response_payload
       )
     end
   end
