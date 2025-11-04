@@ -8,12 +8,14 @@ class CommandChannel < ApplicationCable::Channel
   end
 
   def receive(data)
+    id = data["id"]
     command = data["command"]
     payload = data["payload"]
 
     if connection.client_type == "web"
       ActionCable.server.broadcast("device_#{connection.target_device.id}", {
         from: connection.current_user.username,
+        id: id,
         command: command,
         payload: payload
       })
@@ -21,6 +23,7 @@ class CommandChannel < ApplicationCable::Channel
       ActionCable.server.broadcast(
         "user_#{connection.current_user.id}_to_#{connection.current_device.id}",
         {
+          id: id,
           from: connection.current_device.name,
           command: command,
           payload: payload
