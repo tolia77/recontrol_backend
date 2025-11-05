@@ -20,13 +20,21 @@ class CommandChannel < ApplicationCable::Channel
         payload: payload
       })
     elsif connection.client_type == "desktop"
+      command = data["command"]
       status = data["status"]
       result = data["result"]
       error = data["error"]
-      response_payload = {
-        id: id,
-        status: status,
-      }
+      if command && command == "screen.frame"
+        response_payload = {
+          command: command,
+          payload: data["payload"]
+        }
+      else
+        response_payload = {
+          id: id,
+          status: status,
+        }
+      end
       response_payload[:result] = result if result
       response_payload[:error] = error if error
       ActionCable.server.broadcast(

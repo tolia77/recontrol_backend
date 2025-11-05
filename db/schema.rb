@@ -10,10 +10,23 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_10_16_164248) do
+ActiveRecord::Schema[8.0].define(version: 2025_11_04_222055) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
+
+  create_table "device_shares", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "device_id", null: false
+    t.uuid "user_id", null: false
+    t.uuid "permissions_group_id", null: false
+    t.string "status"
+    t.datetime "expires_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["device_id"], name: "index_device_shares_on_device_id"
+    t.index ["permissions_group_id"], name: "index_device_shares_on_permissions_group_id"
+    t.index ["user_id"], name: "index_device_shares_on_user_id"
+  end
 
   create_table "devices", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "user_id", null: false
@@ -23,6 +36,20 @@ ActiveRecord::Schema[8.0].define(version: 2025_10_16_164248) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["user_id"], name: "index_devices_on_user_id"
+  end
+
+  create_table "permissions_groups", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.boolean "see_screen"
+    t.boolean "see_system_info"
+    t.boolean "access_mouse"
+    t.boolean "access_keyboard"
+    t.boolean "access_terminal"
+    t.boolean "manage_power"
+    t.string "name"
+    t.uuid "user_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["user_id"], name: "index_permissions_groups_on_user_id"
   end
 
   create_table "sessions", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -48,7 +75,11 @@ ActiveRecord::Schema[8.0].define(version: 2025_10_16_164248) do
     t.datetime "updated_at", null: false
   end
 
+  add_foreign_key "device_shares", "devices"
+  add_foreign_key "device_shares", "permissions_groups"
+  add_foreign_key "device_shares", "users"
   add_foreign_key "devices", "users"
+  add_foreign_key "permissions_groups", "users"
   add_foreign_key "sessions", "devices"
   add_foreign_key "sessions", "users"
 end
