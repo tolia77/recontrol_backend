@@ -122,7 +122,8 @@ RSpec.describe "/devices", type: :request do
 
       expect(response).to have_http_status(:created)
       body = JSON.parse(response.body)
-      expect(body["user_id"]).to eq(user.id)
+      p body
+      expect(body["user"]["id"]).to eq(user.id)
       expect(body["name"]).to eq("New Device")
     end
 
@@ -136,7 +137,7 @@ RSpec.describe "/devices", type: :request do
 
       expect(response).to have_http_status(:created)
       body = JSON.parse(response.body)
-      expect(body["user_id"]).to eq(other_user.id)
+      expect(body["user"]["id"]).to eq(other_user.id)
     end
 
     it "returns 422 for invalid params" do

@@ -5,6 +5,7 @@ class DevicesController < ApplicationController
 
   # GET /devices
   def index
+    p "INDEX"
     devices = Device.all
 
     # non-admins only see their devices
@@ -57,6 +58,7 @@ class DevicesController < ApplicationController
 
   # POST /devices
   def create
+    p "CREATE"
     # admins may assign user_id; regular users create for themselves
     if current_user.admin? && device_params[:user_id].present?
       device = Device.new(device_params)
