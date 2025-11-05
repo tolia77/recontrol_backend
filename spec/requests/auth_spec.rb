@@ -4,6 +4,11 @@ RSpec.describe "Auth", type: :request do
   let(:password) { "Password123" }
   let(:user) { User.create!(username: "tester", email: "tester@example.com", password: password) }
 
+  # Helper to extract the raw JWT part from a possibly Bearer-prefixed token
+  def raw_token(token_or_bearer)
+    token_or_bearer.to_s.split.last
+  end
+
   describe "POST /auth/login" do
     it "logs in web client successfully without device_id in JWT" do
       user
@@ -15,8 +20,8 @@ RSpec.describe "Auth", type: :request do
       expect(body["refresh_token"]).to be_present
       expect(body["device_id"]).to be_nil
 
-      access_payload = JWTUtils.decode_access(body["access_token"])[0]
-      refresh_payload = JWTUtils.decode_refresh(body["refresh_token"])[0]
+      access_payload = JWTUtils.decode_access(raw_token(body["access_token"]))[0]
+      refresh_payload = JWTUtils.decode_refresh(raw_token(body["refresh_token"]))[0]
       expect(access_payload["sub"]).to eq(user.id)
       expect(access_payload["device_id"]).to be_nil
       expect(refresh_payload["device_id"]).to be_nil
@@ -29,8 +34,8 @@ RSpec.describe "Auth", type: :request do
       body = JSON.parse(response.body)
       expect(body["device_id"]).to eq(device.id)
 
-      access_payload = JWTUtils.decode_access(body["access_token"])[0]
-      refresh_payload = JWTUtils.decode_refresh(body["refresh_token"])[0]
+      access_payload = JWTUtils.decode_access(raw_token(body["access_token"]))[0]
+      refresh_payload = JWTUtils.decode_refresh(raw_token(body["refresh_token"]))[0]
       expect(access_payload["device_id"]).to eq(device.id)
       expect(refresh_payload["device_id"]).to eq(device.id)
 
@@ -49,7 +54,7 @@ RSpec.describe "Auth", type: :request do
       expect(device.user_id).to eq(user.id)
       expect(device.name).to eq("Work PC")
 
-      access_payload = JWTUtils.decode_access(body["access_token"])[0]
+      access_payload = JWTUtils.decode_access(raw_token(body["access_token"]))[0]
       expect(access_payload["device_id"]).to eq(device.id)
     end
 
@@ -70,7 +75,8 @@ RSpec.describe "Auth", type: :request do
     end
 
     it "fails with 422 when desktop login has no device_id and invalid device_name" do
-      post "/auth/login", params: { email: user.email, password: password, client_type: "desktop" } # no device_name
+      # Pass empty device_name to trigger validation error (presence/length)
+      post "/auth/login", params: { email: user.email, password: password, client_type: "desktop", device_name: "" }
       expect(response).to have_http_status(:unprocessable_entity)
       body = JSON.parse(response.body)
       expect(body).to have_key("name") # validation error on device name
@@ -87,7 +93,7 @@ RSpec.describe "Auth", type: :request do
       expect(body["access_token"]).to be_present
       expect(body["refresh_token"]).to be_present
 
-      access_payload = JWTUtils.decode_access(body["access_token"])[0]
+      access_payload = JWTUtils.decode_access(raw_token(body["access_token"]))[0]
       expect(access_payload["sub"]).to eq(body["user_id"])
     end
 
@@ -128,7 +134,7 @@ RSpec.describe "Auth", type: :request do
       params = { user: { username: "sessu", email: "sessu@example.com", password: "Password123" } }
       post "/auth/register", params: params
       body = JSON.parse(response.body)
-      jti = JWTUtils.decode_access(body["access_token"])[0]["jti"]
+      jti = JWTUtils.decode_access(raw_token(body["access_token"]))[0]["jti"]
       session = Session.find_by(jti: jti)
       expect(session).to be_present
       expect(session.user_id).to eq(body["user_id"])
@@ -142,17 +148,18 @@ RSpec.describe "Auth", type: :request do
       expect(response).to have_http_status(:ok)
       body1 = JSON.parse(response.body)
       refresh1 = body1["refresh_token"]
-      payload1 = JWTUtils.decode_refresh(refresh1)[0]
+      payload1 = JWTUtils.decode_refresh(raw_token(refresh1))[0]
       old_jti = payload1["jti"]
 
-      post "/auth/refresh", headers: { "Refresh-Token" => "Bearer #{refresh1}" }
+      # Use the bearer string exactly as returned
+      post "/auth/refresh", headers: { "Refresh-Token" => refresh1 }
       expect(response).to have_http_status(:ok)
       body2 = JSON.parse(response.body)
       access2 = body2["access_token"]
       refresh2 = body2["refresh_token"]
 
-      access_payload2 = JWTUtils.decode_access(access2)[0]
-      refresh_payload2 = JWTUtils.decode_refresh(refresh2)[0]
+      access_payload2 = JWTUtils.decode_access(raw_token(access2))[0]
+      refresh_payload2 = JWTUtils.decode_refresh(raw_token(refresh2))[0]
 
       expect(access_payload2["device_id"]).to be_nil
       expect(refresh_payload2["jti"]).not_to eq(old_jti)
@@ -171,18 +178,18 @@ RSpec.describe "Auth", type: :request do
       expect(response).to have_http_status(:ok)
       body1 = JSON.parse(response.body)
       refresh1 = body1["refresh_token"]
-      payload1 = JWTUtils.decode_refresh(refresh1)[0]
+      payload1 = JWTUtils.decode_refresh(raw_token(refresh1))[0]
       old_jti = payload1["jti"]
       expect(payload1["device_id"]).to eq(device.id)
 
-      post "/auth/refresh", headers: { "Refresh-Token" => "Bearer #{refresh1}" }
+      post "/auth/refresh", headers: { "Refresh-Token" => refresh1 }
       expect(response).to have_http_status(:ok)
       body2 = JSON.parse(response.body)
       access2 = body2["access_token"]
       refresh2 = body2["refresh_token"]
 
-      access_payload2 = JWTUtils.decode_access(access2)[0]
-      refresh_payload2 = JWTUtils.decode_refresh(refresh2)[0]
+      access_payload2 = JWTUtils.decode_access(raw_token(access2))[0]
+      refresh_payload2 = JWTUtils.decode_refresh(raw_token(refresh2))[0]
 
       expect(access_payload2["device_id"]).to eq(device.id)
       expect(refresh_payload2["device_id"]).to eq(device.id)
@@ -211,11 +218,11 @@ RSpec.describe "Auth", type: :request do
       post "/auth/login", params: { email: user.email, password: password, client_type: "web" }
       body = JSON.parse(response.body)
       refresh_token = body["refresh_token"]
-      payload = JWTUtils.decode_refresh(refresh_token)[0]
+      payload = JWTUtils.decode_refresh(raw_token(refresh_token))[0]
       sess = Session.find_by(user_id: payload["sub"], jti: payload["jti"], session_key: payload["session_key"])
       sess.update!(expires_at: 1.minute.ago)
 
-      post "/auth/refresh", headers: { "Refresh-Token" => "Bearer #{refresh_token}" }
+      post "/auth/refresh", headers: { "Refresh-Token" => refresh_token }
       expect(response).to have_http_status(:unauthorized)
       expect(JSON.parse(response.body)["error"]).to eq("Session expired or not found")
     end
@@ -226,11 +233,11 @@ RSpec.describe "Auth", type: :request do
       refresh1 = body1["refresh_token"]
 
       # First refresh rotates the session
-      post "/auth/refresh", headers: { "Refresh-Token" => "Bearer #{refresh1}" }
+      post "/auth/refresh", headers: { "Refresh-Token" => refresh1 }
       expect(response).to have_http_status(:ok)
 
       # Reuse the old refresh token -> revoked
-      post "/auth/refresh", headers: { "Refresh-Token" => "Bearer #{refresh1}" }
+      post "/auth/refresh", headers: { "Refresh-Token" => refresh1 }
       expect(response).to have_http_status(:unauthorized)
       expect(JSON.parse(response.body)["error"]).to eq("Session revoked")
     end
@@ -241,7 +248,7 @@ RSpec.describe "Auth", type: :request do
       post "/auth/login", params: { email: user.email, password: password, client_type: "desktop", device_id: device.id }
       body = JSON.parse(response.body)
       refresh_token = body["refresh_token"]
-      payload = JWTUtils.decode_refresh(refresh_token)[0]
+      payload = JWTUtils.decode_refresh(raw_token(refresh_token))[0]
       tampered = payload.merge("device_id" => other_device.id)
       tampered_token = JWTUtils.encode_refresh(tampered)
 
@@ -254,12 +261,12 @@ RSpec.describe "Auth", type: :request do
       post "/auth/login", params: { email: user.email, password: password, client_type: "web" }
       body = JSON.parse(response.body)
       refresh_token = body["refresh_token"]
-      payload = JWTUtils.decode_refresh(refresh_token)[0]
+      payload = JWTUtils.decode_refresh(raw_token(refresh_token))[0]
 
       # Delete the backing session
       Session.find_by(user_id: payload["sub"], jti: payload["jti"], session_key: payload["session_key"])&.destroy!
 
-      post "/auth/refresh", headers: { "Refresh-Token" => "Bearer #{refresh_token}" }
+      post "/auth/refresh", headers: { "Refresh-Token" => refresh_token }
       expect(response).to have_http_status(:unauthorized)
       expect(JSON.parse(response.body)["error"]).to eq("Session not found")
     end
@@ -270,10 +277,11 @@ RSpec.describe "Auth", type: :request do
       post "/auth/login", params: { email: user.email, password: password, client_type: "web" }
       body = JSON.parse(response.body)
       access = body["access_token"]
-      payload = JWTUtils.decode_access(access)[0]
+      payload = JWTUtils.decode_access(raw_token(access))[0]
       session = Session.find_by(jti: payload["jti"])
 
-      post "/auth/logout", headers: { "Authorization" => "Bearer #{access}" }
+      # Use the bearer string exactly as returned
+      post "/auth/logout", headers: { "Authorization" => access }
       expect(response).to have_http_status(:ok)
       expect(JSON.parse(response.body)["message"]).to eq("Logged out")
 
@@ -285,10 +293,10 @@ RSpec.describe "Auth", type: :request do
       post "/auth/login", params: { email: user.email, password: password, client_type: "web" }
       body = JSON.parse(response.body)
       refresh = body["refresh_token"]
-      payload = JWTUtils.decode_refresh(refresh)[0]
+      payload = JWTUtils.decode_refresh(raw_token(refresh))[0]
       session = Session.find_by(jti: payload["jti"])
 
-      post "/auth/logout", headers: { "Refresh-Token" => "Bearer #{refresh}" }
+      post "/auth/logout", headers: { "Refresh-Token" => refresh }
       expect(response).to have_http_status(:ok)
       expect(JSON.parse(response.body)["message"]).to eq("Logged out")
 
@@ -301,10 +309,10 @@ RSpec.describe "Auth", type: :request do
       body = JSON.parse(response.body)
       access = body["access_token"]
 
-      post "/auth/logout", headers: { "Authorization" => "Bearer #{access}" }
+      post "/auth/logout", headers: { "Authorization" => access }
       expect(response).to have_http_status(:ok)
 
-      post "/auth/logout", headers: { "Authorization" => "Bearer #{access}" }
+      post "/auth/logout", headers: { "Authorization" => access }
       expect(response).to have_http_status(:ok)
       expect(JSON.parse(response.body)["message"]).to eq("Logged out")
     end

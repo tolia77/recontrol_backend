@@ -37,8 +37,8 @@ module AuthHelpers
 
   def auth_headers(access_token, refresh_token)
     {
-      'Authorization' => "Bearer #{access_token}",
-      'Refresh-Token' => "Bearer #{refresh_token}"
+      'Authorization' => "#{access_token}",
+      'Refresh-Token' => "#{refresh_token}"
     }
   end
 
