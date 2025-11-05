@@ -1,4 +1,6 @@
 Rails.application.routes.draw do
+  resources :permissions_groups
+  resources :device_shares
   mount ActionCable.server => "/cable"
   resources :devices do
     collection do
