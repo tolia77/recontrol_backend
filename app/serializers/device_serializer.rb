@@ -1,5 +1,5 @@
 class DeviceSerializer < ActiveModel::Serializer
-  attributes :id, :name, :status, :last_active_at, :created_at, :updated_at, :user
+  attributes :id, :name, :status, :last_active_at, :created_at, :updated_at, :user, :user_id
 
   def user
     return unless object.user
