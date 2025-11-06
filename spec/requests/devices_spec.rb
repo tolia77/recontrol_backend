@@ -57,7 +57,7 @@ RSpec.describe "/devices", type: :request do
       signed = sign_in_user(user)
       headers = auth_headers(signed[:access_token], signed[:refresh_token])
 
-      get devices_me_url, headers: headers, params: { name: "mine", page: 1, per_page: 5 }, as: :json
+      get devices_me_url, headers: headers, params: { name: "mine", page: 1, per_page: 5 }
       expect(response).to have_http_status(:ok)
       body = JSON.parse(response.body)
       expect(body["devices"].length).to eq(2)

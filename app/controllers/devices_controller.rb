@@ -28,16 +28,16 @@ class DevicesController < ApplicationController
     total = devices.count
     devices = devices.order(created_at: :desc).offset((page - 1) * per_page).limit(per_page)
 
-    render json: { devices: devices, meta: { page: page, per_page: per_page, total: total } }, status: :ok  end
+    render json: { devices: devices, meta: { page: page, per_page: per_page, total: total } }, status: :ok
+  end
 
   # GET /devices/me
   def me
     # owned devices plus devices shared with the user
     owned = current_user.devices
-    shared = Device.joins(:device_shares).where(device_shares: { user_id: current_user.id })
-    devices = owned.or(shared) # union
-
-    devices = devices.where(status: params[:status]) if params[:status].present?
+    # Find all device IDs shared with the user, then query those devices. This avoids incompatible joins.
+    shared = Device.where(id: DeviceShare.where(user_id: current_user.id).select(:device_id))
+    devices = owned.or(shared) # union - this should now be compatible
     if params[:name].present?
       q = "%#{params[:name].to_s.downcase}%"
       devices = devices.where("LOWER(name) LIKE ?", q)
@@ -50,7 +50,7 @@ class DevicesController < ApplicationController
     total = devices.distinct.count
     devices = devices.distinct.order(created_at: :desc).offset((page - 1) * per_page).limit(per_page)
 
-    render json: devices, meta: { page: page, per_page: per_page, total: total }, status: :ok
+    render json: { devices: devices, meta: { page: page, per_page: per_page, total: total } }, status: :ok
   end
 
   # GET /devices/:id
