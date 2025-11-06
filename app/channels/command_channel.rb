@@ -1,8 +1,20 @@
 class CommandChannel < ApplicationCable::Channel
   def subscribed
     if connection.client_type == "desktop"
+      unless connection.current_device && connection.current_device.user_id == connection.current_user.id
+        Rails.logger.warn "[Channel] Rejecting desktop subscription: device does not belong to user"
+        reject
+        return
+      end
       stream_from "device_#{connection.current_device.id}"
     else
+      device = connection.target_device
+      user = connection.current_user
+      unless device && user && (device.user_id == user.id || DeviceShare.exists?(user_id: user.id, device_id: device.id))
+        Rails.logger.warn "[Channel] Rejecting web subscription: access denied for user_id=#{user&.id} device_id=#{device&.id}"
+        reject
+        return
+      end
       stream_from "user_#{connection.current_user.id}_to_#{connection.target_device.id}"
     end
   end

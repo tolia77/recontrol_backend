@@ -25,11 +25,28 @@ module ApplicationCable
       if client_type == "web"
         device_id = request.params[:device_id]
         Rails.logger.info "[Cable] Web client targeting device_id=#{device_id}"
-        self.target_device = current_user.devices.find_by(id: device_id)
-        unless target_device
+
+        # Validate device_id presence and access rights (owner or shared)
+        unless device_id.present?
+          Rails.logger.warn "[Cable] Authorization failed: missing_device_id"
+          reject_unauthorized_connection
+        end
+
+        device = Device.find_by(id: device_id)
+        unless device
           Rails.logger.warn "[Cable] Authorization failed: target_device_not_found for device_id=#{device_id}"
           reject_unauthorized_connection
         end
+
+        is_owner = device.user_id == current_user.id
+        is_shared = DeviceShare.exists?(user_id: current_user.id, device_id: device.id)
+
+        unless is_owner || is_shared
+          Rails.logger.warn "[Cable] Authorization failed: access_denied for user_id=#{current_user.id} device_id=#{device_id}"
+          reject_unauthorized_connection
+        end
+
+        self.target_device = device
       end
     end
 
