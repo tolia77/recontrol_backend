@@ -18,7 +18,7 @@ RSpec.describe '/permissions_groups', type: :request do
     it 'returns own groups for regular user with pagination' do
       signed = sign_in_user(user)
       headers = auth_headers(signed[:access_token], signed[:refresh_token])
-      get permissions_groups_url, headers: headers, params: { page: 1, per_page: 2 }, as: :json
+      get permissions_groups_url, headers: headers, params: { page: 1, per_page: 2 }
       expect(response).to have_http_status(:ok)
       body = JSON.parse(response.body)
       expect(body['items'].length).to eq(2)
@@ -29,7 +29,7 @@ RSpec.describe '/permissions_groups', type: :request do
     it 'returns all groups for admin' do
       signed = sign_in_user(admin)
       headers = auth_headers(signed[:access_token], signed[:refresh_token])
-      get permissions_groups_url, headers: headers, params: { per_page: 10 }, as: :json
+      get permissions_groups_url, headers: headers, params: { per_page: 10 }
       expect(response).to have_http_status(:ok)
       body = JSON.parse(response.body)
       expect(body['meta']['total']).to eq(5)

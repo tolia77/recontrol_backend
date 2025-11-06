@@ -29,7 +29,7 @@ RSpec.describe '/device_shares', type: :request do
     it 'filters by user_id for admin' do
       signed = sign_in_user(admin)
       headers = auth_headers(signed[:access_token], signed[:refresh_token])
-      get device_shares_url, headers: headers, params: { user_id: recipient.id }, as: :json
+      get device_shares_url, headers: headers, params: { user_id: recipient.id }
       expect(response).to have_http_status(:ok)
       body = JSON.parse(response.body)
       expect(body['items'].all? { |s| s['user']['id'] == recipient.id }).to be true
