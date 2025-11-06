@@ -52,6 +52,16 @@ class DeviceSharesController < ApplicationController
     # Build base attributes
     attrs = create_params.to_h
 
+    # If user email provided instead of id, resolve to user_id
+    if attrs["user_id"].blank? && attrs["user_email"].present?
+      email = attrs.delete("user_email").to_s.strip.downcase
+      user = User.find_by(email: email)
+      unless user
+        render json: { error: "User with email not found" }, status: :not_found and return
+      end
+      attrs["user_id"] = user.id
+    end
+
     # Handle nested permissions group attributes
     if attrs["permissions_group_attributes"].present? && attrs["permissions_group_id"].blank?
       pg_attrs = attrs.delete("permissions_group_attributes")
@@ -76,6 +86,16 @@ class DeviceSharesController < ApplicationController
   def update
     # Only device owner or admin can update a share
     attrs = update_params.to_h
+
+    # If user email provided instead of id, resolve to user_id
+    if attrs["user_id"].blank? && attrs["user_email"].present?
+      email = attrs.delete("user_email").to_s.strip.downcase
+      user = User.find_by(email: email)
+      unless user
+        render json: { error: "User with email not found" }, status: :not_found and return
+      end
+      attrs["user_id"] = user.id
+    end
 
     if attrs["permissions_group_attributes"].present? && attrs["permissions_group_id"].blank?
       pg_attrs = attrs.delete("permissions_group_attributes")
@@ -126,6 +146,7 @@ class DeviceSharesController < ApplicationController
     params.require(:device_share).permit(
       :device_id,
       :user_id,
+      :user_email,
       :status,
       :expires_at,
       :permissions_group_id,
@@ -144,6 +165,8 @@ class DeviceSharesController < ApplicationController
 
   def update_params
     params.require(:device_share).permit(
+      :user_id,
+      :user_email,
       :status,
       :expires_at,
       :permissions_group_id,
