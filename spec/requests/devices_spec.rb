@@ -22,7 +22,7 @@ RSpec.describe "/devices", type: :request do
       signed = sign_in_user(user, client_type: "web")
       headers = auth_headers(signed[:access_token], signed[:refresh_token])
 
-      get devices_url, headers: headers, params: { status: "active", name: "user", page: 1, per_page: 2 }, as: :json
+      get "/devices", headers: headers, params: { status: "active", name: "user", page: 1, per_page: 2 }
       expect(response).to have_http_status(:ok)
       body = JSON.parse(response.body)
       expect(body["devices"].length).to eq(2)
@@ -34,7 +34,7 @@ RSpec.describe "/devices", type: :request do
       signed = sign_in_user(admin, client_type: "web")
       headers = auth_headers(signed[:access_token], signed[:refresh_token])
 
-      get devices_url, headers: headers, params: { user_id: other_user.id, per_page: 10 }, as: :json
+      get devices_url, headers: headers, params: { user_id: other_user.id, per_page: 10 }
       expect(response).to have_http_status(:ok)
       body = JSON.parse(response.body)
       expect(body["devices"].all? { |d| d["user_id"] == other_user.id }).to be true

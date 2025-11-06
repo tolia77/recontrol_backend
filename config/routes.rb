@@ -2,11 +2,8 @@ Rails.application.routes.draw do
   resources :permissions_groups
   resources :device_shares
   mount ActionCable.server => "/cable"
-  resources :devices do
-    collection do
-      get :me
-    end
-  end
+  get "devices/me", to: "devices#me"
+  resources :devices
 
   post "auth/login"
   post "auth/register"
