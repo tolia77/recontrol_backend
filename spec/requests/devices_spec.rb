@@ -57,7 +57,7 @@ RSpec.describe "/devices", type: :request do
       signed = sign_in_user(user)
       headers = auth_headers(signed[:access_token], signed[:refresh_token])
 
-      get me_devices_url, headers: headers, params: { name: "mine", page: 1, per_page: 5 }, as: :json
+      get devices_me_url, headers: headers, params: { name: "mine", page: 1, per_page: 5 }, as: :json
       expect(response).to have_http_status(:ok)
       body = JSON.parse(response.body)
       expect(body["devices"].length).to eq(2)
@@ -65,7 +65,7 @@ RSpec.describe "/devices", type: :request do
     end
 
     it "requires authentication" do
-      get me_devices_url, as: :json
+      get devices_me_url, as: :json
       expect(response).to have_http_status(:unauthorized)
     end
   end
