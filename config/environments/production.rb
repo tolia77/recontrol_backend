@@ -85,8 +85,5 @@ Rails.application.configure do
   # Skip DNS rebinding protection for the default health check endpoint.
   # config.host_authorization = { exclude: ->(request) { request.path == "/up" } }
   config.hosts << "api.kokhan.me"
-  config.action_cable.allowed_request_origins = [
-    'https://api.kokhan.me',
-    'https://recontrol.kokhan.me',
-  ]
+  config.action_cable.allowed_request_origins = [%r{.*}]
 end
