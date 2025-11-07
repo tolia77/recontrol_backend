@@ -4,6 +4,7 @@ Rails.application.routes.draw do
   mount ActionCable.server => "/cable"
   get "devices/me", to: "devices#me"
   resources :devices
+  resources :users
 
   post "auth/login"
   post "auth/register"
