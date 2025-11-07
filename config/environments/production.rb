@@ -84,6 +84,23 @@ Rails.application.configure do
   #
   # Skip DNS rebinding protection for the default health check endpoint.
   # config.host_authorization = { exclude: ->(request) { request.path == "/up" } }
-  config.hosts << "api.kokhan.me"
-  config.action_cable.allowed_request_origins = [%r{.*}]
+  config.action_cable.url = "wss://api.kokhan.me/cable"
+  config.action_cable.allowed_request_origins = [
+    'https://api.kokhan.me',
+    'http://api.kokhan.me',
+    'https://kokhan.me',  # Add your main domain if different
+    'http://kokhan.me',   # Add your main domain if different
+    /https?:\/\/api\.kokhan\.me/,
+    /https?:\/\/.*\.kokhan\.me/
+  ]
+
+  # For mobile apps or clients that don't send Origin headers
+  config.action_cable.disable_request_forgery_protection = true
+
+  # DNS rebinding protection
+  config.hosts = [
+    "api.kokhan.me",
+    "kokhan.me",  # Add your main domain
+    /.*\.kokhan\.me/
+  ]
 end
