@@ -1,4 +1,13 @@
 class CommandChannel < ApplicationCable::Channel
+  # Command prefix to permissions_group attribute mapping
+  PERMISSION_PREFIX_MAP = {
+    'keyboard.' => :access_keyboard,
+    'mouse.' => :access_mouse,
+    'terminal.' => :access_terminal,
+    'screen.' => :see_screen, # screen.start / screen.stop ("screen.frame" originates from desktop and is forwarded back)
+    'power.' => :manage_power
+  }.freeze
+
   def subscribed
     if connection.client_type == "desktop"
       unless connection.current_device && connection.current_device.user_id == connection.current_user.id
@@ -25,6 +34,15 @@ class CommandChannel < ApplicationCable::Channel
     if connection.client_type == "web"
       command = data["command"]
       payload = data["payload"]
+
+      # If user is not the owner, enforce permissions based on command prefix
+      unless connection.target_device.user_id == connection.current_user.id
+        unless command_allowed_for_shared_user?(command)
+          Rails.logger.info "[Channel] Blocking command '#{command}' for user_id=#{connection.current_user.id} device_id=#{connection.target_device.id}"
+          return # Do not forward
+        end
+      end
+
       ActionCable.server.broadcast("device_#{connection.target_device.id}", {
         from: connection.current_user.username,
         id: id,
@@ -54,5 +72,22 @@ class CommandChannel < ApplicationCable::Channel
         response_payload
       )
     end
+  end
+
+  private
+
+  def command_allowed_for_shared_user?(command)
+    return false if command.nil?
+
+    prefix_entry = PERMISSION_PREFIX_MAP.find { |prefix, _attr| command.start_with?(prefix) }
+    return false unless prefix_entry
+
+    _prefix, permission_attr = prefix_entry
+
+    # Load the device_share with permissions_group
+    share = DeviceShare.includes(:permissions_group).find_by(user_id: connection.current_user.id, device_id: connection.target_device.id)
+    return false unless share&.permissions_group
+
+    share.permissions_group.public_send(permission_attr)
   end
 end
