@@ -89,7 +89,7 @@ test:
 #
 production:
   primary: &primary_production
-    url: <%= ENV["DATABASE_URL"] %>
+    url: <%= ENV["PRIMARY_DATABASE_URL"] %>
     pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
 
   queue:
@@ -99,4 +99,5 @@ production:
     <<: *primary_production
 
   cable:
-    <<: *primary_production
+    url: <%= ENV["CABLE_DATABASE_URL"] %>
+    pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
