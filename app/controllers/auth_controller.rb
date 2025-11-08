@@ -56,7 +56,7 @@ class AuthController < ApplicationController
 
         set_auth_cookies(access_token, refresh_token)
         # return tokens in response body prefixed with "Bearer "
-        res = { user_id: @user.id, access_token: format_token(access_token), refresh_token: format_token(refresh_token) }
+        res = { user_id: @user.id, role: @user.role, access_token: format_token(access_token), refresh_token: format_token(refresh_token) }
         res["device_id"] = @device.id if @device
         render json: res, status: :ok
       else
