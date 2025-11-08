@@ -44,4 +44,39 @@ RSpec.describe CommandChannel, type: :channel do
       end
     end
   end
+
+  context 'desktop client' do
+    before do
+      stub_connection current_user: owner, client_type: 'desktop', current_device: device
+    end
+
+    it 'forwards screen.frame as-is to user stream' do
+      subscribe
+      data = {
+        'command' => 'screen.frame',
+        'payload' => { 'image' => '...binary...', 'isFull' => true }
+      }
+      expect(ActionCable.server).to receive(:broadcast).with(
+        "user_#{owner.id}_to_#{device.id}", data
+      )
+      perform :receive, data
+    end
+
+    it 'forwards screen.frame_batch as-is to user stream' do
+      subscribe
+      data = {
+        'command' => 'screen.frame_batch',
+        'payload' => {
+          'regions' => [
+            { 'image' => '...bin1...', 'isFull' => false, 'x' => 10, 'y' => 20, 'width' => 100, 'height' => 50 },
+            { 'image' => '...bin2...', 'isFull' => false, 'x' => 120, 'y' => 70, 'width' => 80, 'height' => 40 }
+          ]
+        }
+      }
+      expect(ActionCable.server).to receive(:broadcast).with(
+        "user_#{owner.id}_to_#{device.id}", data
+      )
+      perform :receive, data
+    end
+  end
 end

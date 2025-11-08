@@ -51,22 +51,27 @@ class CommandChannel < ApplicationCable::Channel
       })
     elsif connection.client_type == "desktop"
       command = data["command"]
+
+      # Forward any screen.* messages (e.g., screen.frame, screen.frame_batch) to the frontend as-is
+      if command && command.start_with?("screen.")
+        ActionCable.server.broadcast(
+          "user_#{connection.current_user.id}_to_#{connection.current_device.id}",
+          data
+        )
+        return
+      end
+
       status = data["status"]
       result = data["result"]
       error = data["error"]
-      if command && command == "screen.frame"
-        response_payload = {
-          command: command,
-          payload: data["payload"]
-        }
-      else
-        response_payload = {
-          id: id,
-          status: status,
-        }
-      end
+
+      response_payload = {
+        id: id,
+        status: status,
+      }
       response_payload[:result] = result if result
       response_payload[:error] = error if error
+
       ActionCable.server.broadcast(
         "user_#{connection.current_user.id}_to_#{connection.current_device.id}",
         response_payload
