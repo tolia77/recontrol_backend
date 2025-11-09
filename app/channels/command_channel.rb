@@ -24,7 +24,8 @@ class CommandChannel < ApplicationCable::Channel
         reject
         return
       end
-      stream_from "user_#{connection.current_user.id}_to_#{connection.target_device.id}"
+      # Web clients (both owner and shared users) listen to the owner's stream for this device
+      stream_from "user_#{device.user_id}_to_#{device.id}"
     end
   end
 

@@ -20,6 +20,12 @@ RSpec.describe CommandChannel, type: :channel do
         )
         perform :receive, { 'command' => 'terminal.execute', 'payload' => { 'cmd' => 'dir' }, 'id' => '1' }
       end
+
+      it 'subscribes to owner stream to receive screen data' do
+        subscribe
+        expect(subscription).to be_confirmed
+        expect(subscription).to have_stream_for("user_#{owner.id}_to_#{device.id}")
+      end
     end
 
     context 'as shared user without permissions' do
@@ -41,6 +47,14 @@ RSpec.describe CommandChannel, type: :channel do
           "device_#{device.id}", hash_including(command: 'keyboard.press')
         )
         perform :receive, { 'command' => 'keyboard.press', 'payload' => { 'key' => 'A' }, 'id' => '2' }
+      end
+
+      it 'subscribes to owner stream to receive screen data' do
+        pg = create(:permissions_group, user: owner, see_screen: true)
+        create(:device_share, user: shared_user, device: device, permissions_group: pg)
+        subscribe
+        expect(subscription).to be_confirmed
+        expect(subscription).to have_stream_for("user_#{owner.id}_to_#{device.id}")
       end
     end
   end
