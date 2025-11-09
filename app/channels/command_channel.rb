@@ -54,9 +54,12 @@ class CommandChannel < ApplicationCable::Channel
 
       # Forward any screen.* messages (e.g., screen.frame, screen.frame_batch) to the frontend as-is
       if command && command.start_with?("screen.")
+        # ActionCable::Channel adds {"action"=>"receive"} to inbound data; strip it for outbound payload
+        outgoing = data.dup
+        outgoing.delete("action")
         ActionCable.server.broadcast(
           "user_#{connection.current_user.id}_to_#{connection.current_device.id}",
-          data
+          outgoing
         )
         return
       end
