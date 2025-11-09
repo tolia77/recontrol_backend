@@ -30,6 +30,73 @@ class DeviceSharesController < ApplicationController
     }, status: :ok
   end
 
+  # GET /device_shares/me
+  # Returns shares where current_user is device owner (outgoing) or recipient (incoming)
+  def me
+    base = DeviceShare.joins(:device).where("devices.user_id = ? OR device_shares.user_id = ?", current_user.id, current_user.id)
+    base = base.includes(:device, :user, :permissions_group)
+
+    # Optional direction filter: incoming (received) or outgoing (as owner)
+    dir_param = (params[:direction].presence || params[:owner]).to_s.downcase
+    case dir_param
+    when "incoming", "received", "shared"
+      base = base.where(device_shares: { user_id: current_user.id })
+    when "outgoing", "owned", "me"
+      base = base.where(devices: { user_id: current_user.id })
+    end
+
+    # Generic filters by exact match
+    base = base.where(device_shares: { id: params[:id] }) if params[:id].present?
+    base = base.where(device_shares: { device_id: params[:device_id] }) if params[:device_id].present?
+    base = base.where(device_shares: { user_id: params[:user_id] }) if params[:user_id].present?
+    base = base.where(device_shares: { permissions_group_id: params[:permissions_group_id] }) if params[:permissions_group_id].present?
+    base = base.where(device_shares: { status: params[:status] }) if params[:status].present?
+    base = base.where(device_shares: { expires_at: params[:expires_at] }) if params[:expires_at].present?
+
+    # Filter by user_email (recipient) if provided
+    if params[:user_email].present?
+      email = params[:user_email].to_s.strip.downcase
+      base = base.joins(:user).where("LOWER(users.email) = ?", email)
+    end
+
+    # Time range filters
+    if params[:created_from].present?
+      t = parse_time(params[:created_from]); base = base.where("device_shares.created_at >= ?", t) if t
+    end
+    if params[:created_to].present?
+      t = parse_time(params[:created_to]); base = base.where("device_shares.created_at <= ?", t) if t
+    end
+    if params[:updated_from].present?
+      t = parse_time(params[:updated_from]); base = base.where("device_shares.updated_at >= ?", t) if t
+    end
+    if params[:updated_to].present?
+      t = parse_time(params[:updated_to]); base = base.where("device_shares.updated_at <= ?", t) if t
+    end
+    if params[:expires_from].present?
+      t = parse_time(params[:expires_from]); base = base.where("device_shares.expires_at >= ?", t) if t
+    end
+    if params[:expires_to].present?
+      t = parse_time(params[:expires_to]); base = base.where("device_shares.expires_at <= ?", t) if t
+    end
+
+    # Pagination
+    page = [params.fetch(:page, 1).to_i, 1].max
+    per_page = [params.fetch(:per_page, 25).to_i, 1].max
+    per_page = [per_page, 100].min
+
+    total = base.distinct.count
+    shares = apply_sort(base.distinct).offset((page - 1) * per_page).limit(per_page)
+
+    render json: {
+      items: shares.as_json(include: {
+        device: { only: [:id, :name] },
+        user: { only: [:id, :username, :email] },
+        permissions_group: { only: [:id, :name, :see_screen, :see_system_info, :access_mouse, :access_keyboard, :access_terminal, :manage_power] }
+      }),
+      meta: { page: page, per_page: per_page, total: total }
+    }, status: :ok
+  end
+
   # GET /device_shares/:id
   def show
     render json: {
@@ -181,5 +248,20 @@ class DeviceSharesController < ApplicationController
         :user_id
       ]
     )
+  end
+
+  # Safe sorting helper for device shares
+  def apply_sort(scope)
+    allowed = %w[created_at updated_at expires_at status]
+    sort_by = params[:sort_by].to_s
+    sort_by = allowed.include?(sort_by) ? sort_by : "created_at"
+    dir = params[:sort_dir].to_s.downcase == "asc" ? :asc : :desc
+    scope.order(sort_by.to_sym => dir)
+  end
+
+  # Parse time string safely (ISO8601 or common formats). Returns Time or nil.
+  def parse_time(val)
+    return nil if val.blank?
+    Time.iso8601(val) rescue (Time.zone.parse(val) rescue nil)
   end
 end

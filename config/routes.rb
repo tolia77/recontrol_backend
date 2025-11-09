@@ -1,5 +1,6 @@
 Rails.application.routes.draw do
   resources :permissions_groups
+  get "device_shares/me", to: "device_shares#me"
   resources :device_shares
   mount ActionCable.server => "/cable"
   get "devices/me", to: "devices#me"
