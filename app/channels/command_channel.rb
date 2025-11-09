@@ -26,6 +26,7 @@ class CommandChannel < ApplicationCable::Channel
       end
       # Web clients (both owner and shared users) listen to the owner's stream for this device
       stream_from "user_#{device.user_id}_to_#{device.id}"
+      device.update!(status: "used")
     end
   end
 

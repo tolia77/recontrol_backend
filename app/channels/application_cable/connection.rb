@@ -58,6 +58,10 @@ module ApplicationCable
           status: "inactive"
         )
         Rails.logger.info "[Cable] Deactivated desktop device id=#{current_device.id}"
+      elsif client_type == "web"
+        if target_device&.status == "used"
+          target_device.update!(status: "active")
+        end
       end
     end
   end
