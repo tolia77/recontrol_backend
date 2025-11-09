@@ -13,32 +13,47 @@ RSpec.describe "/devices", type: :request do
 
   describe "GET /devices (index)" do
     before do
-      create_list(:device, 3, user: user, name: "UserDevice", status: "active")
-      create_list(:device, 2, user: user, name: "OldDevice", status: "inactive")
-      create_list(:device, 4, user: other_user, name: "OtherDevice", status: "active")
+      create_list(:device, 3, user: user, name: "UserDevice", status: "active", last_active_at: 2.hours.ago)
+      create_list(:device, 2, user: user, name: "OldDevice", status: "inactive", last_active_at: 3.days.ago)
+      create_list(:device, 4, user: other_user, name: "OtherDevice", status: "active", last_active_at: 30.minutes.ago)
     end
 
-    it "returns own devices for regular user and supports status and name filters and pagination" do
+    it "forbids regular user (admin only)" do
       signed = sign_in_user(user, client_type: "web")
       headers = auth_headers(signed[:access_token], signed[:refresh_token])
-
-      get "/devices", headers: headers, params: { status: "active", name: "user", page: 1, per_page: 2 }
-      expect(response).to have_http_status(:ok)
-      body = JSON.parse(response.body)
-      expect(body["devices"].length).to eq(2)
-      expect(body["meta"]["total"]).to eq(3)
-      expect(body["devices"].all? { |d| d["user_id"] == user.id }).to be true
+      get "/devices", headers: headers
+      expect(response).to have_http_status(:forbidden)
     end
 
-    it "returns all devices for admin and supports user_id filter" do
+    it "returns all filtered devices for admin with user_id and last_active range + sorting" do
       signed = sign_in_user(admin, client_type: "web")
       headers = auth_headers(signed[:access_token], signed[:refresh_token])
 
-      get devices_url, headers: headers, params: { user_id: other_user.id, per_page: 10 }
+      from = 1.hour.ago.iso8601
+      to   = Time.current.iso8601
+      get devices_url, headers: headers, params: {
+        user_id: other_user.id,
+        status: "active",
+        last_active_from: from,
+        last_active_to: to,
+        sort_by: "last_active_at",
+        sort_dir: "asc"
+      }
       expect(response).to have_http_status(:ok)
       body = JSON.parse(response.body)
       expect(body["devices"].all? { |d| d["user_id"] == other_user.id }).to be true
-      expect(body["meta"]["total"]).to eq(4)
+      times = body["devices"].map { |d| Time.parse(d["last_active_at"]) }
+      expect(times).to eq(times.sort) # asc order
+    end
+
+    it "falls back to created_at sorting when invalid sort_by provided" do
+      signed = sign_in_user(admin, client_type: "web")
+      headers = auth_headers(signed[:access_token], signed[:refresh_token])
+      get devices_url, headers: headers, params: { sort_by: "___bad___", sort_dir: "asc", per_page: 5 }
+      expect(response).to have_http_status(:ok)
+      body = JSON.parse(response.body)
+      created = body["devices"].map { |d| Time.parse(d["created_at"]) }
+      expect(created).to eq(created.sort) # asc fallback
     end
 
     it "returns unauthorized for unauthenticated requests" do
@@ -49,19 +64,45 @@ RSpec.describe "/devices", type: :request do
 
   describe "GET /devices/me" do
     before do
-      create_list(:device, 2, user: user, name: "Mine", status: "active")
-      create(:device, user: other_user, name: "Other", status: "active")
+      create_list(:device, 2, user: user, name: "Mine", status: "active", last_active_at: 10.minutes.ago)
+      shared_device = create(:device, user: other_user, name: "SharedX", status: "active", last_active_at: 5.minutes.ago)
+      create(:device_share, device: shared_device, user: user) # shared to current user
     end
 
-    it "returns current user's devices with pagination and filters" do
+    it "filters by owner=me" do
       signed = sign_in_user(user)
       headers = auth_headers(signed[:access_token], signed[:refresh_token])
-
-      get devices_me_url, headers: headers, params: { name: "mine", page: 1, per_page: 5 }
-      expect(response).to have_http_status(:ok)
+      get devices_me_url, headers: headers, params: { owner: "me" }
       body = JSON.parse(response.body)
       expect(body["devices"].length).to eq(2)
       expect(body["devices"].all? { |d| d["user_id"] == user.id }).to be true
+    end
+
+    it "filters by owner=shared" do
+      signed = sign_in_user(user)
+      headers = auth_headers(signed[:access_token], signed[:refresh_token])
+      get devices_me_url, headers: headers, params: { owner: "shared" }
+      body = JSON.parse(response.body)
+      expect(body["devices"].length).to eq(1)
+      expect(body["devices"].all? { |d| d["user_id"] == other_user.id }).to be true
+    end
+
+    it "returns both when owner omitted and supports name + last_active range + sorting" do
+      signed = sign_in_user(user)
+      headers = auth_headers(signed[:access_token], signed[:refresh_token])
+      from = 15.minutes.ago.iso8601
+      to   = Time.current.iso8601
+      get devices_me_url, headers: headers, params: {
+        name: "x", # matches SharedX
+        last_active_from: from,
+        last_active_to: to,
+        sort_by: "name",
+        sort_dir: "asc"
+      }
+      body = JSON.parse(response.body)
+      names = body["devices"].map { |d| d["name"] }
+      expect(names).to eq(names.sort) # asc by name
+      expect(names).to include("SharedX")
     end
 
     it "requires authentication" do
