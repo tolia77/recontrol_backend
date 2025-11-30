@@ -1,92 +1,38 @@
+# frozen_string_literal: true
+
 class DevicesController < ApplicationController
+  include Paginatable
+  include Sortable
+  include TimeParseable
+
+  SORTABLE_COLUMNS = %w[created_at updated_at last_active_at name status].freeze
+
   before_action :authenticate_user!
   before_action :set_device, only: %i[show update destroy]
   before_action :authorize_owner_or_admin, only: %i[show update destroy]
 
   # GET /devices
   def index
-    p "INDEX"
-    # Admin-only access
     unless current_user.admin?
-      render json: { error: "Forbidden" }, status: :forbidden and return
+      render json: { error: "Forbidden" }, status: :forbidden
+      return
     end
 
-    devices = Device.all
+    devices = build_device_query(Device.all)
+    result = paginate(apply_sort(devices, allowed_columns: SORTABLE_COLUMNS))
 
-    # Optional scoping by user_id for admins
-    devices = devices.where(user_id: params[:user_id]) if params[:user_id].present?
-
-    # Filters
-    devices = devices.where(status: params[:status]) if params[:status].present?
-    if params[:name].present?
-      q = "%#{params[:name].to_s.downcase}%"
-      devices = devices.where("LOWER(name) LIKE ?", q)
-    end
-    if params[:last_active_from].present?
-      from = parse_time(params[:last_active_from])
-      devices = devices.where("last_active_at >= ?", from) if from
-    end
-    if params[:last_active_to].present?
-      to = parse_time(params[:last_active_to])
-      devices = devices.where("last_active_at <= ?", to) if to
-    end
-
-    # Pagination
-    page = [params.fetch(:page, 1).to_i, 1].max
-    per_page = [params.fetch(:per_page, 25).to_i, 1].max
-    per_page = [per_page, 100].min
-
-    total = devices.count
-    devices = apply_sort(devices).offset((page - 1) * per_page).limit(per_page)
-
-    render json: { devices: devices, meta: { page: page, per_page: per_page, total: total } }, status: :ok
+    render json: { devices: result[:records], meta: result[:meta] }, status: :ok
   end
 
   # GET /devices/me
   def me
-    # owned devices plus devices shared with the user (filtered by owner param)
-    owned = current_user.devices
-    shared = Device.where(id: DeviceShare.where(user_id: current_user.id).select(:device_id))
-
-    owner_param = params[:owner].to_s.downcase
-    devices =
-      case owner_param
-      when "me", "owned"
-        owned
-      when "shared"
-        shared
-      else
-        owned.or(shared)
-      end
-
-    devices = devices.preload(:user)
-
-    # Filters
-    devices = devices.where(status: params[:status]) if params[:status].present?
-    if params[:name].present?
-      q = "%#{params[:name].to_s.downcase}%"
-      devices = devices.where("LOWER(name) LIKE ?", q)
-    end
-    if params[:last_active_from].present?
-      from = parse_time(params[:last_active_from])
-      devices = devices.where("last_active_at >= ?", from) if from
-    end
-    if params[:last_active_to].present?
-      to = parse_time(params[:last_active_to])
-      devices = devices.where("last_active_at <= ?", to) if to
-    end
-
-    # Pagination
-    page = [params.fetch(:page, 1).to_i, 1].max
-    per_page = [params.fetch(:per_page, 25).to_i, 1].max
-    per_page = [per_page, 100].min
-
-    total = devices.distinct.count
-    devices = apply_sort(devices.distinct).offset((page - 1) * per_page).limit(per_page)
+    devices = build_user_devices_scope
+    devices = build_device_query(devices.preload(:user))
+    result = paginate(apply_sort(devices.distinct, allowed_columns: SORTABLE_COLUMNS))
 
     render json: {
-      devices: devices.as_json(include: { user: { only: %i[username email] } }),
-      meta: { page: page, per_page: per_page, total: total }
+      devices: result[:records].as_json(include: { user: { only: %i[username email] } }),
+      meta: result[:meta]
     }, status: :ok
   end
 
@@ -97,13 +43,7 @@ class DevicesController < ApplicationController
 
   # POST /devices
   def create
-    p "CREATE"
-    # admins may assign user_id; regular users create for themselves
-    if current_user.admin? && device_params[:user_id].present?
-      device = Device.new(device_params)
-    else
-      device = current_user.devices.build(device_params.except(:user_id))
-    end
+    device = build_device
 
     if device.save
       render json: device, status: :created, location: device
@@ -136,27 +76,58 @@ class DevicesController < ApplicationController
 
   def authorize_owner_or_admin
     return if current_user.admin?
-    unless @device.user_id == current_user.id
-      render json: { error: "Forbidden" }, status: :forbidden
-    end
+    return if @device.user_id == current_user.id
+
+    render json: { error: "Forbidden" }, status: :forbidden
   end
 
   def device_params
     params.fetch(:device, {}).permit(:name, :status, :user_id)
   end
 
-  # Parse time string safely (ISO8601 or common formats). Returns Time or nil.
-  def parse_time(val)
-    return nil if val.blank?
-    Time.iso8601(val) rescue (Time.zone.parse(val) rescue nil)
+  # ──────────────────────────────────────────────────────────────────────────────
+  # Query Building
+  # ──────────────────────────────────────────────────────────────────────────────
+
+  def build_user_devices_scope
+    owned = current_user.devices
+    shared = Device.where(id: DeviceShare.where(user_id: current_user.id).select(:device_id))
+
+    case params[:owner].to_s.downcase
+    when "me", "owned"
+      owned
+    when "shared"
+      shared
+    else
+      owned.or(shared)
+    end
   end
 
-  # Safe sorting helper for devices
-  def apply_sort(scope)
-    allowed = %w[created_at updated_at last_active_at name status]
-    sort_by = params[:sort_by].to_s
-    sort_by = allowed.include?(sort_by) ? sort_by : "created_at"
-    dir = params[:sort_dir].to_s.downcase == "asc" ? :asc : :desc
-    scope.order(sort_by.to_sym => dir)
+  def build_device_query(scope)
+    scope = scope.where(user_id: params[:user_id]) if params[:user_id].present?
+    scope = apply_device_filters(scope)
+    scope
+  end
+
+  def apply_device_filters(scope)
+    scope = scope.where(status: params[:status]) if params[:status].present?
+    scope = apply_name_filter(scope)
+    scope = apply_time_range_filter(scope, column: :last_active_at, from_param: :last_active_from, to_param: :last_active_to)
+    scope
+  end
+
+  def apply_name_filter(scope)
+    return scope unless params[:name].present?
+
+    pattern = "%#{params[:name].to_s.downcase}%"
+    scope.where("LOWER(name) LIKE ?", pattern)
+  end
+
+  def build_device
+    if current_user.admin? && device_params[:user_id].present?
+      Device.new(device_params)
+    else
+      current_user.devices.build(device_params.except(:user_id))
+    end
   end
 end
