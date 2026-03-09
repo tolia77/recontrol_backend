@@ -7,6 +7,7 @@ class CommandChannel < ApplicationCable::Channel
     "mouse." => :access_mouse,
     "terminal." => :access_terminal,
     "screen." => :see_screen,
+    "webrtc." => :see_screen,
     "power." => :manage_power
   }.freeze
 
@@ -86,7 +87,7 @@ class CommandChannel < ApplicationCable::Channel
   def handle_desktop_message(data)
     command = data["command"]
 
-    if screen_command?(command)
+    if screen_command?(command) || webrtc_command?(command)
       broadcast_screen_data(data)
     else
       broadcast_command_response(data)
@@ -171,6 +172,10 @@ class CommandChannel < ApplicationCable::Channel
 
   def screen_command?(command)
     command&.start_with?("screen.")
+  end
+
+  def webrtc_command?(command)
+    command&.start_with?("webrtc.")
   end
 
   # ──────────────────────────────────────────────────────────────────────────────

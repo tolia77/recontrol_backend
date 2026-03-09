@@ -21,6 +21,14 @@ RSpec.describe CommandChannel, type: :channel do
         perform :receive, { 'command' => 'terminal.execute', 'payload' => { 'cmd' => 'dir' }, 'id' => '1' }
       end
 
+      it 'forwards webrtc.offer to device stream' do
+        subscribe
+        expect(ActionCable.server).to receive(:broadcast).with(
+          "device_#{device.id}", hash_including(command: 'webrtc.offer')
+        )
+        perform :receive, { 'command' => 'webrtc.offer', 'payload' => { 'sdp' => 'v=0...' }, 'id' => '1' }
+      end
+
       it 'subscribes to owner stream to receive screen data' do
         subscribe
         expect(subscription).to be_confirmed
@@ -86,6 +94,30 @@ RSpec.describe CommandChannel, type: :channel do
             { 'image' => '...bin2...', 'isFull' => false, 'x' => 120, 'y' => 70, 'width' => 80, 'height' => 40 }
           ]
         }
+      }
+      expect(ActionCable.server).to receive(:broadcast).with(
+        "user_#{owner.id}_to_#{device.id}", data
+      )
+      perform :receive, data
+    end
+
+    it 'forwards webrtc.answer to user stream' do
+      subscribe
+      data = {
+        'command' => 'webrtc.answer',
+        'payload' => { 'sdp' => 'v=0...' }
+      }
+      expect(ActionCable.server).to receive(:broadcast).with(
+        "user_#{owner.id}_to_#{device.id}", data
+      )
+      perform :receive, data
+    end
+
+    it 'forwards webrtc.ice_candidate to user stream' do
+      subscribe
+      data = {
+        'command' => 'webrtc.ice_candidate',
+        'payload' => { 'candidate' => 'candidate:...' }
       }
       expect(ActionCable.server).to receive(:broadcast).with(
         "user_#{owner.id}_to_#{device.id}", data
