@@ -17,8 +17,9 @@ class AuthController < ApplicationController
             render json: { error: "Device does not belong to user" }, status: :unauthorized
             return
           end
+          @device.update(platform_name: params[:platform_name], platform_version: params[:platform_version])
         else
-          @device = Device.new(user: @user, name: device_name)
+          @device = Device.new(user: @user, name: device_name, platform_name: params[:platform_name], platform_version: params[:platform_version])
           unless @device.save
             render json: @device.errors, status: :unprocessable_entity
             return
@@ -153,7 +154,11 @@ class AuthController < ApplicationController
       session = Session.find_by(user_id: user_id, jti: jti, session_key: session_key)
       if session
         if session.status == "revoked"
-          Session.where(user_id: user_id, session_key: session_key).update_all(status: "revoked")
+          # Only cascade-revoke if session was revoked more than 30 seconds ago
+          # (recent revocation is likely a concurrent refresh race, not token theft)
+          if session.updated_at < 30.seconds.ago
+            Session.where(user_id: user_id, session_key: session_key).update_all(status: "revoked")
+          end
           render json: { error: "Session revoked" }, status: :unauthorized
           return
         end
