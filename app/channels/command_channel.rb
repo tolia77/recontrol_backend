@@ -87,7 +87,7 @@ class CommandChannel < ApplicationCable::Channel
   def handle_desktop_message(data)
     command = data["command"]
 
-    if screen_command?(command) || webrtc_command?(command)
+    if screen_command?(command) || webrtc_command?(command) || terminal_streaming_command?(command)
       broadcast_screen_data(data)
     else
       broadcast_command_response(data)
@@ -176,6 +176,10 @@ class CommandChannel < ApplicationCable::Channel
 
   def webrtc_command?(command)
     command&.start_with?("webrtc.")
+  end
+
+  def terminal_streaming_command?(command)
+    command&.start_with?("terminal.output")
   end
 
   # ──────────────────────────────────────────────────────────────────────────────
