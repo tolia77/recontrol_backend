@@ -24,7 +24,7 @@ services:
 
     # --- UPDATED COMMAND ---
     # This now *only* removes the old server.pid and starts the server.
-    command: /bin/bash -c "rm -f tmp/pids/server.pid && ./bin/rails s -b 0.0.0.0"
+    command: /bin/bash -c "rm -f tmp/pids/server.pid && ./bin/rails db:prepare && ./bin/rails s -b 0.0.0.0"
 
     depends_on:
       - db

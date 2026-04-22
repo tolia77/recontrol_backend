@@ -30,13 +30,8 @@ development:
     port: <%= ENV["DB_DEV_PORT"] %>
   queue:
     <<: *primary_dev
+    database: <%= ENV["DB_DEV_NAME"] %>_queue
     migrations_paths: db/queue_migrate
-  cache:
-    <<: *primary_dev
-    migrations_paths: db/cache_migrate
-  cable:
-    <<: *primary_dev
-    migrations_paths: db/cable_migrate
 
 
   # The specified database role being used to connect to PostgreSQL.
