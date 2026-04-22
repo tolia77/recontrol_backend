@@ -34,5 +34,6 @@ module RecontrolBackend
     end
 
     config.hosts << "dev3000.kokhan.me"
+    config.hosts << "port3003.kokhan.me"
   end
 end

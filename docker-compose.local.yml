@@ -9,7 +9,7 @@ services:
       - .:/rails
       - bundle_gems:/usr/local/bundle
     ports:
-      - "3000:3000"
+      - "3003:3000"
 
     # Load all variables from the .env.development file
     env_file: .env.development
