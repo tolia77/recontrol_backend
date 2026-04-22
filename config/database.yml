@@ -21,12 +21,22 @@ default: &default
 
 
 development:
-  <<: *default
-  database: <%= ENV["DB_DEV_NAME"] %>
-  username: <%= ENV["DB_DEV_USER"] %>
-  password: <%= ENV["DB_DEV_PASSWORD"] %>
-  host: <%= ENV["DB_DEV_HOST"] %>
-  port: <%= ENV["DB_DEV_PORT"] %>
+  primary: &primary_dev
+    <<: *default
+    database: <%= ENV["DB_DEV_NAME"] %>
+    username: <%= ENV["DB_DEV_USER"] %>
+    password: <%= ENV["DB_DEV_PASSWORD"] %>
+    host: <%= ENV["DB_DEV_HOST"] %>
+    port: <%= ENV["DB_DEV_PORT"] %>
+  queue:
+    <<: *primary_dev
+    migrations_paths: db/queue_migrate
+  cache:
+    <<: *primary_dev
+    migrations_paths: db/cache_migrate
+  cable:
+    <<: *primary_dev
+    migrations_paths: db/cable_migrate
 
 
   # The specified database role being used to connect to PostgreSQL.

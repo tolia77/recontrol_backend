@@ -29,6 +29,23 @@ services:
     depends_on:
       - db
 
+  jobs:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: build
+    volumes:
+      - .:/rails
+      - bundle_gems:/usr/local/bundle
+    env_file: .env.development
+    environment:
+      RAILS_ENV: development
+      DB_DEV_HOST: db
+      DATABASE_URL: "postgres://${DB_DEV_USER}:${DB_DEV_PASSWORD}@db:5432/${DB_DEV_NAME}"
+    command: /bin/bash -c "./bin/rails db:prepare && ./bin/jobs"
+    depends_on:
+      - db
+
   db:
     image: postgres:16-alpine
     # Load variables to map them
