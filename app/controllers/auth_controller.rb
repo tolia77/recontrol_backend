@@ -11,9 +11,10 @@ class AuthController < ApplicationController
     @user = User.find_by(email: email)
     if @user&.authenticate(password)
       if client_type == "desktop"
-        if device_id.present?
-          @device = Device.find(device_id)
-          unless @device&.user == @user
+        @device = Device.find_by(id: device_id) if device_id.present?
+
+        if @device
+          unless @device.user == @user
             render json: { error: "Device does not belong to user" }, status: :unauthorized
             return
           end
