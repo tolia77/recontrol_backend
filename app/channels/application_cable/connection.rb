@@ -66,7 +66,8 @@ module ApplicationCable
       return unless current_device
 
       Rails.logger.info "[Cable] Activating desktop device id=#{current_device.id}"
-      current_device.update(status: "active")
+      new_status = web_clients_active?(current_device) ? "used" : "active"
+      current_device.update(status: new_status)
     end
 
     def deactivate_desktop_device
@@ -134,8 +135,20 @@ module ApplicationCable
 
     def release_web_device
       return unless target_device&.status == "used"
+      return if web_clients_active?(target_device)
 
       target_device.update!(status: "active")
+    end
+
+    # Counts web ActionCable connections targeting the given device, excluding self.
+    # Per-process only: assumes a single Puma worker. With multiple workers, use a
+    # Redis-backed presence counter instead.
+    def web_clients_active?(device)
+      ActionCable.server.connections.any? do |conn|
+        conn != self &&
+          conn.client_type == "web" &&
+          conn.target_device&.id == device.id
+      end
     end
   end
 end
