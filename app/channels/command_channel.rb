@@ -87,6 +87,11 @@ class CommandChannel < ApplicationCable::Channel
   def handle_desktop_message(data)
     command = data["command"]
 
+    if command == "heartbeat"
+      connection.current_device&.update_columns(last_active_at: Time.current)
+      return
+    end
+
     if screen_command?(command) || webrtc_command?(command) || terminal_streaming_command?(command)
       broadcast_screen_data(data)
     else

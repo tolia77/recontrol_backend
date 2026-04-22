@@ -67,7 +67,7 @@ module ApplicationCable
 
       Rails.logger.info "[Cable] Activating desktop device id=#{current_device.id}"
       new_status = web_clients_active?(current_device) ? "used" : "active"
-      current_device.update(status: new_status)
+      current_device.update(status: new_status, last_active_at: Time.current)
     end
 
     def deactivate_desktop_device
