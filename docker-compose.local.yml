@@ -24,8 +24,27 @@ services:
 
     # --- UPDATED COMMAND ---
     # This now *only* removes the old server.pid and starts the server.
-    command: /bin/bash -c "rm -f tmp/pids/server.pid && ./bin/rails db:prepare && ./bin/rails s -b 0.0.0.0"
+    command: /bin/bash -c "rm -f tmp/pids/server.pid && ./bin/rails s -b 0.0.0.0"
 
+    depends_on:
+      db_prepare:
+        condition: service_completed_successfully
+
+  db_prepare:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: build
+    volumes:
+      - .:/rails
+      - bundle_gems:/usr/local/bundle
+    env_file: .env.development
+    environment:
+      RAILS_ENV: development
+      DB_DEV_HOST: db
+      DATABASE_URL: "postgres://${DB_DEV_USER}:${DB_DEV_PASSWORD}@db:5432/${DB_DEV_NAME}"
+    command: ./bin/rails db:prepare
+    restart: "no"
     depends_on:
       - db
 
@@ -42,9 +61,10 @@ services:
       RAILS_ENV: development
       DB_DEV_HOST: db
       DATABASE_URL: "postgres://${DB_DEV_USER}:${DB_DEV_PASSWORD}@db:5432/${DB_DEV_NAME}"
-    command: /bin/bash -c "./bin/rails db:prepare && ./bin/jobs"
+    command: ./bin/jobs
     depends_on:
-      - db
+      db_prepare:
+        condition: service_completed_successfully
 
   db:
     image: postgres:16-alpine
