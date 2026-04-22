@@ -63,7 +63,9 @@ class DevicesController < ApplicationController
 
   # DELETE /devices/:id
   def destroy
+    device_id = @device.id
     @device.destroy!
+    ActionCable.server.broadcast("device_#{device_id}", { command: "device.deleted" })
     head :no_content
   end
 
