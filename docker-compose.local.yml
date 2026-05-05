@@ -67,19 +67,18 @@ services:
         condition: service_completed_successfully
 
   db:
-    image: postgres:16-alpine
-    # Load variables to map them
+    image: postgres:18
     env_file: .env.development
 
-    # The postgres image needs POSTGRES_USER, POSTGRES_PASSWORD, etc.
-    # We map your custom variables to what the image expects.
     environment:
       POSTGRES_USER: ${DB_DEV_USER}
       POSTGRES_PASSWORD: ${DB_DEV_PASSWORD}
       POSTGRES_DB: ${DB_DEV_NAME}
 
+    # PG18+ uses /var/lib/postgresql/<MAJOR>/docker; mount the parent so
+    # future major upgrades can use pg_upgrade --link against sibling dirs.
     volumes:
-      - postgres_data_dev:/var/lib/postgresql/data
+      - postgres_data_dev:/var/lib/postgresql
 
 volumes:
   postgres_data_dev:
