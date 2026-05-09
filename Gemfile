@@ -38,6 +38,9 @@ gem "bcrypt"
 gem "dotenv-rails"
 gem "jwt"
 gem "active_model_serializers"
+gem "dry-schema", "~> 1.15"
+gem "faraday", "~> 2.14"
+gem "event_stream_parser", "~> 1.0" # spec-compliant SSE parser (Shopify); use with Faraday's req.options.on_data hook
 
 group :development, :test do
   # See https://guides.rubyonrails.org/debugging_rails_applications.html#debugging-with-the-debug-gem
