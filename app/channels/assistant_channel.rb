@@ -3,10 +3,9 @@
 require "securerandom"
 
 class AssistantChannel < ApplicationCable::Channel
-  # Per AGENT-08: operator-selectable model from a fixed allowlist. Phase 18 reads from the
-  # OpenRouterClient constant (Plan 3 lands the constant); during Plan 1 the constant is
-  # not yet defined -- guard with a const_defined? check so this channel can be loaded
-  # before OpenRouterClient exists. Plan 3 removes the guard.
+  # Per AGENT-08: operator-selectable model from a fixed allowlist. Plan 3 lands
+  # OpenRouterClient with DEFAULT_MODEL + ALLOWED_MODELS; Plan 5 retires the
+  # Plan-1 defined?-guarded fallback and references the constants directly.
   def subscribed
     unless valid_subscription?
       Rails.logger.warn "[AssistantChannel] Rejecting subscription: access denied for " \
@@ -34,10 +33,25 @@ class AssistantChannel < ApplicationCable::Channel
 
     @session_token = SecureRandom.uuid
 
-    # NOTE: Plan 5 replaces this transmit with `@agent_runner = AgentRunner.new(...)` and
-    # `@agent_thread = Thread.new { @agent_runner.run }`. Plan 1 just confirms the session
-    # bind for early integration tests.
+    # AGENT-11 / STREAM-04: confirm acceptance BEFORE spawning the runner so the
+    # frontend has the session_token in hand before any AgentRunner broadcast on
+    # `assistant_<user>_to_<device>` could arrive.
     transmit({ type: "accepted", session_token: @session_token, model: model })
+
+    @agent_runner = AgentRunner.new(
+      user:          connection.current_user,
+      device:        connection.target_device,
+      prompt:        prompt,
+      model:         model,
+      session_token: @session_token
+    )
+
+    @agent_thread = Thread.new do
+      @agent_runner.run
+    rescue StandardError => e
+      # AgentRunner's own rescue chain should have handled this; log defensively.
+      Rails.logger.error "[AssistantChannel] runner thread escaped exception: #{e.class}"
+    end
   end
 
   def stop_loop(_data = {})
@@ -72,19 +86,10 @@ class AssistantChannel < ApplicationCable::Channel
   end
 
   def default_model
-    if defined?(OpenRouterClient) && OpenRouterClient.const_defined?(:DEFAULT_MODEL)
-      OpenRouterClient::DEFAULT_MODEL
-    else
-      ENV.fetch("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet")
-    end
+    OpenRouterClient::DEFAULT_MODEL
   end
 
   def allowed_models
-    if defined?(OpenRouterClient) && OpenRouterClient.const_defined?(:ALLOWED_MODELS)
-      OpenRouterClient::ALLOWED_MODELS
-    else
-      # Plan 1 fallback when OpenRouterClient does not exist yet. Plan 3 retires this branch.
-      [ENV.fetch("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet")].freeze
-    end
+    OpenRouterClient::ALLOWED_MODELS
   end
 end

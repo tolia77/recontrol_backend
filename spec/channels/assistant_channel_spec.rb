@@ -49,14 +49,19 @@ RSpec.describe AssistantChannel, type: :channel do
     before do
       stub_connection current_user: owner, client_type: "web", target_device: device
       subscribe
+      # Plan 5: run_prompt now spawns an AgentRunner thread. Mock the runner
+      # construction so the channel spec does not depend on OpenRouter credentials.
+      @fake_runner = instance_double(AgentRunner, run: nil, request_stop: nil)
+      allow(AgentRunner).to receive(:new).and_return(@fake_runner)
     end
 
     it "transmits an accepted envelope with a SecureRandom.uuid session_token" do
       perform :run_prompt, { "prompt" => "list /tmp", "model" => "anthropic/claude-3.5-sonnet" }
-      last = transmissions.last
-      expect(last["type"]).to eq("accepted")
-      expect(last["session_token"]).to match(/\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/)
-      expect(last["model"]).to eq("anthropic/claude-3.5-sonnet")
+      accepted = transmissions.find { |t| t["type"] == "accepted" }
+      expect(accepted).not_to be_nil
+      expect(accepted["session_token"]).to match(/\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/)
+      expect(accepted["model"]).to eq("anthropic/claude-3.5-sonnet")
+      subscription.instance_variable_get(:@agent_thread)&.join(1.0)
     end
 
     it "rejects an unauthorised model with type=error message=invalid_model" do
@@ -71,6 +76,72 @@ RSpec.describe AssistantChannel, type: :channel do
       last = transmissions.last
       expect(last["type"]).to eq("error")
       expect(last["message"]).to eq("empty_prompt")
+    end
+  end
+
+  describe "#run_prompt -- runner spawn (Plan 5 wiring)" do
+    before do
+      stub_connection current_user: owner, client_type: "web", target_device: device
+      subscribe
+    end
+
+    it "constructs AgentRunner with the validated model and minted session_token, spawns a Thread" do
+      fake_runner = instance_double(AgentRunner, run: nil)
+
+      expect(AgentRunner).to receive(:new).with(
+        hash_including(
+          user: owner,
+          device: device,
+          prompt: "list /tmp",
+          model: "anthropic/claude-3.5-sonnet",
+          session_token: match(/\A[0-9a-f-]{36}\z/)
+        )
+      ).and_return(fake_runner)
+
+      perform :run_prompt, { "prompt" => "list /tmp", "model" => "anthropic/claude-3.5-sonnet" }
+
+      thread = subscription.instance_variable_get(:@agent_thread)
+      expect(thread).to be_a(Thread)
+      thread.join(1.0)
+    end
+
+    it "transmits accepted BEFORE spawning the thread (so the frontend has the session_token)" do
+      fake_runner = instance_double(AgentRunner)
+      allow(fake_runner).to receive(:run)
+      allow(AgentRunner).to receive(:new).and_return(fake_runner)
+
+      order = []
+      allow(subscription).to receive(:transmit) { |payload| order << [:transmit, payload[:type]] }
+      original_thread_new = Thread.method(:new)
+      allow(Thread).to receive(:new) do |*args, &block|
+        order << [:thread_new]
+        original_thread_new.call(*args, &block)
+      end
+
+      perform :run_prompt, { "prompt" => "x", "model" => "anthropic/claude-3.5-sonnet" }
+      subscription.instance_variable_get(:@agent_thread)&.join(1.0)
+
+      # First event is the accepted transmit; the thread spawn happens after.
+      expect(order.first).to eq([:transmit, "accepted"])
+      expect(order.find { |e| e == [:thread_new] }).not_to be_nil
+      expect(order.index([:transmit, "accepted"])).to be < order.index([:thread_new])
+    end
+  end
+
+  describe "#stop_loop -- runner wired" do
+    before do
+      stub_connection current_user: owner, client_type: "web", target_device: device
+      subscribe
+    end
+
+    it "calls request_stop on the runner instance" do
+      fake_runner = instance_double(AgentRunner, run: nil)
+      allow(AgentRunner).to receive(:new).and_return(fake_runner)
+      expect(fake_runner).to receive(:request_stop)
+
+      perform :run_prompt, { "prompt" => "x", "model" => "anthropic/claude-3.5-sonnet" }
+      perform :stop_loop
+      subscription.instance_variable_get(:@agent_thread)&.join(1.0)
     end
   end
 
