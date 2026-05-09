@@ -16,6 +16,42 @@ module RecontrolBackend
     # Common ones are `templates`, `generators`, or `middleware`, for example.
     config.autoload_lib(ignore: %w[assets tasks])
 
+    # Phase 18: app/ai_tools/ is namespaced under the AiTools module rather
+    # than treated as an autoload root. Zeitwerk normally infers
+    # app/ai_tools/base.rb -> top-level Base; we want AiTools::Base. Remove
+    # the directory from the default-pushed roots and re-attach it as a
+    # namespaced dir before Zeitwerk's setup runs.
+    ai_tools_path = Rails.root.join("app/ai_tools").to_s
+    config.autoload_paths     -= [ai_tools_path]
+    config.eager_load_paths   -= [ai_tools_path]
+
+    initializer "ai_tools.namespace", before: :setup_main_autoloader do
+      # Phase 18: AiTools is a top-level namespace whose body lives in
+      # app/ai_tools/base.rb (umbrella REGISTRY + register/fetch/all_definitions
+      # + Base abstract class). Zeitwerk normally wants app/ai_tools/base.rb
+      # to define top-level Base; we re-attach the directory as a namespaced
+      # autoload root so the file's `module AiTools; class Base; ...` is the
+      # canonical mapping target.
+      module ::AiTools; end
+      Rails.autoloaders.main.push_dir(
+        Rails.root.join("app/ai_tools"),
+        namespace: ::AiTools
+      )
+    end
+
+    # Phase 18: eager-load every concrete tool at boot so AiTools::REGISTRY is
+    # populated before AgentRunner's first AiTools.fetch / .all_definitions
+    # call. Rails' default eager_load is false in dev/test, so without this
+    # the four tools only register lazily on first const reference -- which
+    # would break `AiTools.fetch("run_command")` from a fresh runner.
+    config.after_initialize do
+      next unless defined?(::AiTools)
+      Dir.glob(Rails.root.join("app/ai_tools/*.rb")).sort.each do |path|
+        const_name = File.basename(path, ".rb").camelize
+        ::AiTools.const_get(const_name)
+      end
+    end
+
     # Configuration for the application, engines, and railties goes here.
     #
     # These settings can be overridden in specific environments using the files
