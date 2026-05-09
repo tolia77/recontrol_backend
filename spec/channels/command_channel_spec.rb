@@ -124,5 +124,47 @@ RSpec.describe CommandChannel, type: :channel do
       )
       perform :receive, data
     end
+
+    describe '#handle_desktop_message tool_call_id routing' do
+      let(:tool_call_id) { SecureRandom.uuid }
+
+      it 'routes responses bearing tool_call_id through CommandBridge.deliver and skips the user broadcast' do
+        subscribe
+        expect(CommandBridge).to receive(:deliver).with(
+          tool_call_id,
+          hash_including(id: 'web-msg-1', status: 'ok', result: { 'stdout' => 'hi' })
+        )
+        expect(ActionCable.server).not_to receive(:broadcast)
+
+        perform :receive, {
+          'tool_call_id' => tool_call_id,
+          'command'      => 'terminal.execute',
+          'id'           => 'web-msg-1',
+          'status'       => 'ok',
+          'result'       => { 'stdout' => 'hi' }
+        }
+      end
+
+      it 'forwards plain (non-tool) command responses to broadcast_to_user as before (regression guard)' do
+        subscribe
+        expect(CommandBridge).not_to receive(:deliver)
+        expect(ActionCable.server).to receive(:broadcast).with(
+          "user_#{owner.id}_to_#{device.id}",
+          hash_including(id: 'web-msg-2', status: 'ok')
+        )
+
+        perform :receive, {
+          'command' => 'terminal.execute',
+          'id'      => 'web-msg-2',
+          'status'  => 'ok'
+        }
+      end
+
+      it 'does not route heartbeats through CommandBridge even if a tool_call_id field is somehow present' do
+        subscribe
+        expect(CommandBridge).not_to receive(:deliver)
+        perform :receive, { 'command' => 'heartbeat', 'tool_call_id' => 'should-not-route' }
+      end
+    end
   end
 end

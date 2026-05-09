@@ -92,6 +92,15 @@ class CommandChannel < ApplicationCable::Channel
       return
     end
 
+    # Phase 18: route AgentRunner-correlated tool responses to CommandBridge.deliver
+    # instead of the user broadcast. The CommandBridge consumer (AgentRunner thread)
+    # handles the result; the operator's panel receives a tool_call_result broadcast
+    # via AssistantChannel.broadcast_to(...) from inside AgentRunner.
+    if data["tool_call_id"].present?
+      CommandBridge.deliver(data["tool_call_id"], build_response_payload(data))
+      return
+    end
+
     if screen_command?(command) || webrtc_command?(command) || terminal_streaming_command?(command)
       broadcast_screen_data(data)
     else
