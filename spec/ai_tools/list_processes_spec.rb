@@ -69,4 +69,16 @@ RSpec.describe AiTools::ListProcesses do
       expect(pids).to eq([1, 2, 3])
     end
   end
+
+  describe "#policy_verdict (Phase 19 / D-03)" do
+    let(:device) { instance_double("Device", platform_name: "linux") }
+    let(:tool)   { described_class.new(device: device) }
+
+    it "always returns :allow/:read_only_tool" do
+      verdict = tool.send(:policy_verdict, {})
+      expect(verdict.decision).to eq(:allow)
+      expect(verdict.reason).to eq(:read_only_tool)
+      expect(verdict.resolved_binary).to be_nil
+    end
+  end
 end

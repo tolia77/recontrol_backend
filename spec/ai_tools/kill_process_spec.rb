@@ -30,6 +30,10 @@ RSpec.describe AiTools::KillProcess do
   end
 
   describe "#call" do
+    before do
+      allow(tool).to receive(:await_confirmation).and_return(:proceed)
+    end
+
     it "dispatches process.kill with integer pid (TOOL-08)" do
       expect(CommandBridge).to receive(:dispatch).with(
         device: device,
@@ -71,6 +75,18 @@ RSpec.describe AiTools::KillProcess do
         { id: "x", status: "ok", result: { killed: false, error: "no_such_pid" } }
       )
       expect(tool.call(pid: 1234)).to eq({ killed: false, error: "no_such_pid" })
+    end
+  end
+
+  describe "#policy_verdict (Phase 19 / D-03)" do
+    let(:device) { instance_double("Device", platform_name: "linux") }
+    let(:tool)   { described_class.new(device: device) }
+
+    it "always returns :needs_confirm/:destructive_tool" do
+      verdict = tool.send(:policy_verdict, { pid: 1234 })
+      expect(verdict.decision).to eq(:needs_confirm)
+      expect(verdict.reason).to eq(:destructive_tool)
+      expect(verdict.resolved_binary).to be_nil
     end
   end
 end

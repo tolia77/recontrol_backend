@@ -60,13 +60,33 @@ class AssistantChannel < ApplicationCable::Channel
     @agent_runner&.request_stop
   end
 
+  def confirm_tool_call(data)
+    confirmation_id = data["confirmation_id"].to_s
+    decision = data["decision"].to_s
+
+    unless %w[allow deny].include?(decision)
+      Rails.logger.warn "[AssistantChannel] confirm_tool_call: invalid decision=#{decision}"
+      return
+    end
+
+    ConfirmationRegistry.deliver(confirmation_id, { decision: decision })
+  end
+
   def unsubscribed
-    # AGENT-11: kill the agent thread within 1 second and let the ensure-block emit the
-    # terminating done/error broadcast (STREAM-06).
+    # AGENT-11: kill the agent thread within 1 second; AgentRunner's ensure block
+    # emits the terminating done/error broadcast (STREAM-06) and finalizes the
+    # AiSession row.
     @agent_thread&.kill
     joined = @agent_thread&.join(1.0)
     Rails.logger.warn "[AssistantChannel] unsubscribed timeout (thread did not unwind in 1s)" if @agent_thread && joined.nil?
-    # TODO Phase 19: ai_usages.commit(@partial_tokens)
+
+    ai_session = @agent_runner&.ai_session
+    if ai_session && ai_session.ended_at.nil?
+      ai_session.update!(
+        ended_at: Time.current,
+        stop_reason: "tab_closed"
+      )
+    end
   end
 
   private

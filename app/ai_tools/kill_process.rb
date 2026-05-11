@@ -24,6 +24,14 @@ module AiTools
 
     private
 
+    def policy_verdict(_args)
+      CommandPolicy::Verdict.new(
+        decision: :needs_confirm,
+        reason: :destructive_tool,
+        resolved_binary: nil
+      )
+    end
+
     def build_payload(args)
       { command: "process.kill", payload: { pid: args[:pid] } }
     end

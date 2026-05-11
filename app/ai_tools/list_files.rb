@@ -22,6 +22,14 @@ module AiTools
 
     private
 
+    def policy_verdict(_args)
+      CommandPolicy::Verdict.new(
+        decision: :allow,
+        reason: :read_only_tool,
+        resolved_binary: nil
+      )
+    end
+
     def build_payload(args)
       { command: "filemanager.list", payload: { path: args[:path] } }
     end

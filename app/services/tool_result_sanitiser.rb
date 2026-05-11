@@ -1,10 +1,30 @@
 # frozen_string_literal: true
 
+# ToolResultSanitiser
+# -------------------
+# Invoked by AiTools::Base#call after parse_response and before tool results are
+# appended to the model message stream or broadcast to the operator transcript.
+# The sanitiser recursively walks Hash / Array / String values and applies the
+# locked SAFETY-11 pipeline to String values only:
+#
+#   1) Strip ANSI escapes (7-bit, strings-ansi style)
+#   2) Strip ASCII control bytes (preserving newline + tab)
+#   3) Truncate with mb_chars.limit(4_096).to_s (byte budget, UTF-8 safe)
+#   4) Redact secrets with fixed-order SAFETY-12 pattern passes
+#
+# Notes:
+# - Hash keys are intentionally left untouched.
+# - Numeric/boolean/nil values pass through unchanged.
+# - Pipeline order is intentionally locked (ANSI before control stripping).
+# - Secret pattern order is intentionally locked (specific -> generic).
 module ToolResultSanitiser
   module_function
 
   TRUNCATE_BYTES = 4_096
 
+  # 7-bit ANSI escape regex (vendored shape from strings-ansi).
+  # Covers CSI, cursor control, OSC title/hyperlink payloads, and related
+  # escape forms commonly emitted by shell tooling.
   ANSI_RE = %r{
     (?>\e(
       \[[\[?>!]?\d*(;\d+)*[ ]?[a-zA-Z~@$^\]_\{\\]
@@ -25,6 +45,15 @@ module ToolResultSanitiser
 
   CTRL_RE = /[\x00-\x08\x0B-\x1F\x7F]/.freeze
 
+  # SAFETY-12: fixed-order secret redaction passes.
+  # - PEM block
+  # - AWS access key
+  # - DB URI
+  # - env assignment (preserve key name, redact value only)
+  # - base64 catch-all
+  #
+  # Replacements are the locked bare literal "[REDACTED]".
+  # For env assignment we preserve the left-hand side via a backreference.
   SECRET_PATTERNS = [
     [
       /-----BEGIN [A-Z ]{1,40}PRIVATE KEY-----[\s\S]{1,8000}?-----END [A-Z ]{1,40}PRIVATE KEY-----/,
@@ -48,6 +77,7 @@ module ToolResultSanitiser
     ]
   ].freeze
 
+  # Recursive pure-function walker.
   def call(value)
     case value
     when Hash
@@ -61,6 +91,8 @@ module ToolResultSanitiser
     end
   end
 
+  # Locked SAFETY-11 pipeline:
+  # ANSI -> control-char strip -> mb_chars byte truncation -> redaction.
   def sanitise_string(value)
     output = value.gsub(ANSI_RE, "")
     output = output.gsub(CTRL_RE, "")
@@ -68,6 +100,7 @@ module ToolResultSanitiser
     redact_secrets(output)
   end
 
+  # Fixed-order redaction reduce pass.
   def redact_secrets(value)
     SECRET_PATTERNS.reduce(value) do |accumulator, (pattern, replacement)|
       accumulator.gsub(pattern, replacement)

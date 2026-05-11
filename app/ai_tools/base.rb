@@ -98,20 +98,36 @@ module AiTools
       }
     end
 
-    def initialize(device:)
+    def initialize(device:, agent_runner: nil)
       @device = device
+      @agent_runner = agent_runner
     end
 
-    # Template method: validate -> build_payload -> dispatch -> parse_response.
+    # Template method: validate -> policy_verdict -> (optional confirmation gate)
+    # -> build_payload -> dispatch -> parse_response -> sanitiser.
     # Returns one of:
     #   { error: "invalid_arguments", details: {...} }   (D-12, schema failure)
+    #   { error: "policy_denied", reason: Symbol }       (Phase 19 policy deny)
+    #   { error: "denied_by_operator" }                  (Phase 19 confirmation deny)
+    #   { error: "user_stopped_confirmation" }           (Phase 19 stop sentinel)
+    #   { error: "confirmation_timeout" }                (Phase 19 timeout)
     #   { error: "tool_timeout" }                         (TOOL-07, propagated from CommandBridge)
     #   <subclass parse_response shape>                   (success)
     def call(args)
       result = self.class::SCHEMA.call(args || {})
       return { error: "invalid_arguments", details: result.errors.to_h } if result.failure?
+      validated = result.to_h
 
-      payload      = build_payload(result.to_h)
+      verdict = policy_verdict(validated)
+      case verdict.decision
+      when :deny
+        return { error: "policy_denied", reason: verdict.reason }
+      when :needs_confirm
+        confirm_result = await_confirmation(validated, verdict)
+        return confirm_result if confirm_result.is_a?(Hash) && confirm_result[:error]
+      end
+
+      payload      = build_payload(validated)
       tool_call_id = SecureRandom.uuid
       response     = CommandBridge.dispatch(
         device: @device,
@@ -120,13 +136,78 @@ module AiTools
       )
 
       # CommandBridge timeout passthrough: do NOT call parse_response on a
-      # tool_timeout envelope -- the desktop sent nothing to parse.
-      return response if response.is_a?(Hash) && response[:error] == "tool_timeout"
+      # tool_timeout envelope -- the desktop sent nothing to parse. Still run
+      # through the sanitiser walker for a uniform return pipeline.
+      parsed = response.is_a?(Hash) && response[:error] == "tool_timeout" ? response : parse_response(response)
 
-      parse_response(response)
+      ToolResultSanitiser.call(parsed)
     end
 
     private
+
+    def policy_verdict(args)
+      CommandPolicy.evaluate(
+        binary: args[:binary],
+        args: args[:args],
+        cwd: args[:cwd],
+        device: @device
+      )
+    end
+
+    def await_confirmation(args, verdict)
+      confirmation_id = SecureRandom.uuid
+      queue = ConfirmationRegistry.register(confirmation_id)
+
+      envelope = build_requires_confirmation_envelope(args, verdict, confirmation_id)
+      if @agent_runner&.respond_to?(:emit_requires_confirmation)
+        @agent_runner.emit_requires_confirmation(envelope)
+      else
+        Rails.logger.warn "[AiTools::Base] no agent_runner; requires_confirmation broadcast skipped"
+      end
+
+      timeout = if @agent_runner&.respond_to?(:wall_clock_remaining)
+                  [@agent_runner.wall_clock_remaining, 0].max
+                else
+                  AgentRunner::WALL_CLOCK_SECONDS
+                end
+
+      decision = if @agent_runner&.respond_to?(:with_pending_confirmation_queue)
+                   popped = nil
+                   @agent_runner.with_pending_confirmation_queue(queue) do
+                     popped = queue.pop(timeout: timeout)
+                   end
+                   popped
+                 else
+                   queue.pop(timeout: timeout)
+                 end
+
+      case decision&.dig(:decision) || decision&.dig("decision")
+      when "allow"
+        :proceed
+      when "deny"
+        { error: "denied_by_operator" }
+      when "user_stopped"
+        { error: "user_stopped_confirmation" }
+      else
+        { error: "confirmation_timeout" }
+      end
+    ensure
+      ConfirmationRegistry.delete(confirmation_id)
+    end
+
+    def build_requires_confirmation_envelope(args, verdict, confirmation_id)
+      zone = verdict.reason == :deny_list ? "deny_list" : "outside_list"
+      {
+        type: "requires_confirmation",
+        confirmation_id: confirmation_id,
+        label: self.class::HUMAN_LABEL,
+        command: args[:binary],
+        args: args[:args] || [],
+        cwd: args[:cwd],
+        reason: verdict.reason,
+        zone: zone
+      }
+    end
 
     def build_payload(_args)
       raise NotImplementedError, "#{self.class} must implement #build_payload"

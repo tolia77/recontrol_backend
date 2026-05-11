@@ -156,6 +156,44 @@ RSpec.describe AssistantChannel, type: :channel do
     end
   end
 
+  describe "#confirm_tool_call (Phase 19 / SAFETY-07)" do
+    let(:owner)  { create(:user) }
+    let(:device) { create(:device, user: owner) }
+
+    before do
+      stub_connection current_user: owner, client_type: "web", target_device: device
+      subscribe
+    end
+
+    it "delivers operator allow decision to ConfirmationRegistry" do
+      cid = SecureRandom.uuid
+      queue = ConfirmationRegistry.register(cid)
+      perform :confirm_tool_call, "confirmation_id" => cid, "decision" => "allow"
+      expect(queue.pop(true)).to eq({ decision: "allow" })
+      ConfirmationRegistry.delete(cid)
+    end
+
+    it "delivers operator deny decision to ConfirmationRegistry" do
+      cid = SecureRandom.uuid
+      queue = ConfirmationRegistry.register(cid)
+      perform :confirm_tool_call, "confirmation_id" => cid, "decision" => "deny"
+      expect(queue.pop(true)).to eq({ decision: "deny" })
+      ConfirmationRegistry.delete(cid)
+    end
+
+    it "rejects unknown decision values without calling deliver" do
+      cid = SecureRandom.uuid
+      expect(ConfirmationRegistry).not_to receive(:deliver)
+      expect(Rails.logger).to receive(:warn).with(/invalid decision=bogus/)
+      perform :confirm_tool_call, "confirmation_id" => cid, "decision" => "bogus"
+    end
+
+    it "is a silent no-op for missing/expired confirmation_id" do
+      expect { perform :confirm_tool_call, "confirmation_id" => "missing", "decision" => "allow" }
+        .not_to raise_error
+    end
+  end
+
   describe "#unsubscribed" do
     before do
       stub_connection current_user: owner, client_type: "web", target_device: device
@@ -183,6 +221,68 @@ RSpec.describe AssistantChannel, type: :channel do
 
     it "is a no-op when @agent_thread is nil" do
       expect { subscription.unsubscribe_from_channel }.not_to raise_error
+    end
+  end
+
+  describe "#unsubscribed AiSession finalize-on-tab-close (Phase 19 / D-11)" do
+    let(:owner)  { create(:user) }
+    let(:device) { create(:device, user: owner) }
+
+    before do
+      stub_connection current_user: owner, client_type: "web", target_device: device
+      subscribe
+    end
+
+    it "does NOT contain the Phase 19 TODO comment" do
+      expect(File.read(Rails.root.join("app/channels/assistant_channel.rb")))
+        .not_to include("TODO Phase 19")
+    end
+
+    it "finalizes AiSession with stop_reason='tab_closed' when ended_at is NULL on tab close" do
+      ai_session = AiSession.create!(
+        user: owner,
+        device: device,
+        started_at: Time.current,
+        model: "anthropic/claude-3.5-sonnet"
+      )
+      runner = double("AgentRunner", ai_session: ai_session, request_stop: nil)
+      subscription.instance_variable_set(:@agent_runner, runner)
+      subscription.instance_variable_set(:@agent_thread, Thread.new { sleep })
+
+      unsubscribe
+
+      ai_session.reload
+      expect(ai_session.ended_at).to be_present
+      expect(ai_session.stop_reason).to eq("tab_closed")
+    end
+
+    it "is a no-op when @agent_runner.ai_session is nil" do
+      runner = double("AgentRunner", ai_session: nil, request_stop: nil)
+      subscription.instance_variable_set(:@agent_runner, runner)
+      subscription.instance_variable_set(:@agent_thread, nil)
+      expect { unsubscribe }.not_to raise_error
+    end
+
+    it "does NOT re-finalize an already-closed AiSession" do
+      ai_session = AiSession.create!(
+        user: owner,
+        device: device,
+        started_at: 1.minute.ago,
+        ended_at: 30.seconds.ago,
+        stop_reason: "completed",
+        turn_count: 2,
+        input_tokens: 100,
+        output_tokens: 50,
+        model: "anthropic/claude-3.5-sonnet"
+      )
+      runner = double("AgentRunner", ai_session: ai_session, request_stop: nil)
+      subscription.instance_variable_set(:@agent_runner, runner)
+      subscription.instance_variable_set(:@agent_thread, nil)
+
+      unsubscribe
+
+      ai_session.reload
+      expect(ai_session.stop_reason).to eq("completed")
     end
   end
 end

@@ -32,6 +32,12 @@ RSpec.describe AiTools::RunCommand do
   end
 
   describe "#call" do
+    before do
+      allow(tool).to receive(:policy_verdict).and_return(
+        CommandPolicy::Verdict.new(decision: :allow, reason: :allowlisted, resolved_binary: "/usr/bin/ls")
+      )
+    end
+
     let(:dispatch_response) do
       {
         id: "x", status: "ok",
@@ -72,6 +78,12 @@ RSpec.describe AiTools::RunCommand do
       out = tool.call(binary: "", args: [], cwd: "/tmp")
       expect(out[:error]).to eq("invalid_arguments")
       expect(out[:details]).to have_key(:binary)
+    end
+  end
+
+  describe "#policy_verdict (Phase 19 / D-03 default delegation)" do
+    it "RunCommand inherits the default policy_verdict from Base (no override)" do
+      expect(described_class.instance_method(:policy_verdict).owner).to eq(AiTools::Base)
     end
   end
 end
