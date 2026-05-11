@@ -6,6 +6,9 @@ Rails.application.routes.draw do
   get "devices/me", to: "devices#me"
   resources :devices
   resources :users
+  namespace :admin do
+    get "ai_usage", to: "ai_usage#index"
+  end
 
   post "auth/login"
   post "auth/register"
