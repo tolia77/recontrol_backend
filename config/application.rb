@@ -50,6 +50,11 @@ module RecontrolBackend
         const_name = File.basename(path, ".rb").camelize
         ::AiTools.const_get(const_name)
       end
+
+      # Phase 19: warn (do not fail) if any allow-listed binary is missing on
+      # the host running the Rails server. This is a forensics aid; the policy
+      # itself fails closed at request time regardless.
+      ::CommandPolicy.warn_missing_paths! if defined?(::CommandPolicy)
     end
 
     # Configuration for the application, engines, and railties goes here.
