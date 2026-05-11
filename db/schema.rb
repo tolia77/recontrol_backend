@@ -10,10 +10,37 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_03_24_232820) do
+ActiveRecord::Schema[8.0].define(version: 2026_05_10_000002) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
+
+  create_table "ai_sessions", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "user_id", null: false
+    t.uuid "device_id"
+    t.datetime "started_at", null: false
+    t.datetime "ended_at"
+    t.integer "turn_count", default: 0, null: false
+    t.bigint "input_tokens"
+    t.bigint "output_tokens"
+    t.string "model", null: false
+    t.string "stop_reason"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["device_id"], name: "index_ai_sessions_on_device_id"
+    t.index ["user_id", "started_at"], name: "index_ai_sessions_on_user_id_and_started_at"
+    t.index ["user_id"], name: "index_ai_sessions_on_user_id"
+  end
+
+  create_table "ai_usages", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "user_id", null: false
+    t.date "usage_date", null: false
+    t.bigint "tokens_used", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["user_id", "usage_date"], name: "index_ai_usages_on_user_and_date", unique: true
+    t.index ["user_id"], name: "index_ai_usages_on_user_id"
+  end
 
   create_table "device_shares", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "device_id", null: false
@@ -77,6 +104,9 @@ ActiveRecord::Schema[8.0].define(version: 2026_03_24_232820) do
     t.datetime "updated_at", null: false
   end
 
+  add_foreign_key "ai_sessions", "devices", on_delete: :nullify
+  add_foreign_key "ai_sessions", "users"
+  add_foreign_key "ai_usages", "users"
   add_foreign_key "device_shares", "devices"
   add_foreign_key "device_shares", "permissions_groups"
   add_foreign_key "device_shares", "users"

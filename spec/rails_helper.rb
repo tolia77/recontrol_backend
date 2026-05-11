@@ -70,4 +70,13 @@ RSpec.configure do |config|
   config.filter_rails_from_backtrace!
   # arbitrary gems may also be filtered via:
   # config.filter_gems_from_backtrace("gem name")
+
+  config.before(:each, :concurrent) do
+    self.use_transactional_tests = false if respond_to?(:use_transactional_tests=)
+  end
+
+  config.after(:each, :concurrent) do
+    AiUsage.delete_all
+    User.delete_all
+  end
 end

@@ -14,6 +14,14 @@ default: &default
     class: SweepStaleDevicesJob
     schedule: every 30 seconds
 
+  ai_usages_cleanup:
+    class: AiUsagesCleanupJob
+    schedule: every day at 3am
+
+  ai_sessions_orphan_sweep:
+    class: AiSessionsSweeperJob
+    schedule: every 5 minutes
+
 development:
   <<: *default
 
