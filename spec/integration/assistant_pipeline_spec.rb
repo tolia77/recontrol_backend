@@ -29,7 +29,7 @@ RSpec.describe "Assistant pipeline (Phase 18)" do
   # channel-test machinery in.
   describe AssistantChannel, type: :channel do
     let(:owner)  { create(:user) }
-    let(:device) { create(:device, user: owner) }
+    let(:device) { create(:device, user: owner, platform_name: "linux") }
 
     let(:captured) { [] }
     let(:client)   { instance_double(OpenRouterClient) }
@@ -336,7 +336,7 @@ RSpec.describe "Assistant pipeline (Phase 18)" do
   # ──────────────────────────────────────────────────────────────────────────
   describe "concurrent runners for the same (user, device) (D-07)" do
     let(:user)     { create(:user) }
-    let(:device)   { create(:device, user: user) }
+    let(:device)   { create(:device, user: user, platform_name: "linux") }
     let(:captured) { [] }
 
     before do

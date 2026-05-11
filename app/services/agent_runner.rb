@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "concurrent"
+require "concurrent/atomic/atomic_boolean"
 require "json"
 require "securerandom"
 
@@ -37,9 +38,9 @@ class AgentRunner
   # ──────────────────────────────────────────────────────────────────────────
   # Stop reason codes (for `done` broadcast envelope)
   # ──────────────────────────────────────────────────────────────────────────
-  STOP_REASONS = %w[completed max_turns wall_clock loop_detected user_stopped].freeze
+  STOP_REASONS = %w[completed max_turns wall_clock loop_detected user_stopped quota tab_closed].freeze
 
-  attr_reader :session_token
+  attr_reader :session_token, :ai_session
 
   def initialize(user:, device:, prompt:, model:, session_token:, openrouter_client: nil)
     @user           = user
@@ -65,15 +66,41 @@ class AgentRunner
 
     @terminated     = false  # STREAM-06; flipped by broadcast_done / broadcast_error
 
+    platform       = @device.platform_name.to_s
+    allowlist_keys = (CommandPolicy::BINARY_PATHS[platform] || {})
+      .keys
+      .reject { |k| CommandPolicy::DENY_LIST.include?(k) }
+      .sort
+    platform_label = platform.presence || "unknown"
+    allowlist_str  = allowlist_keys.empty? ? "(none)" : allowlist_keys.join(", ")
+    system_content = format(OpenRouterClient::SYSTEM_PROMPT_TEMPLATE,
+      platform: platform_label,
+      allowlist: allowlist_str)
+
     @messages = [
-      { role: "system", content: OpenRouterClient::SYSTEM_PROMPT_TEMPLATE },
+      { role: "system", content: system_content },
       { role: "user",   content: @prompt }
     ]
+
+    @session_input_tokens  = 0
+    @session_output_tokens = 0
+    @stop_reason           = nil
+    @ai_session            = nil
+    @quota_warning_emitted = Concurrent::AtomicBoolean.new(false)
+    @quota_warning_mutex   = Mutex.new
+
+    @pending_confirmation_queue = nil
+    @pending_queue_mutex        = Mutex.new
+
+    @started_monotonic = nil
   end
 
   # AGENT-07: cooperative stop. Loop checks at turn boundaries.
   def request_stop
     @stop_flag.make_true
+    @pending_queue_mutex.synchronize do
+      @pending_confirmation_queue&.push({ decision: "user_stopped" })
+    end
   end
 
   # AGENT-11 helper: AssistantChannel#unsubscribed already calls Thread#kill +
@@ -82,14 +109,38 @@ class AgentRunner
     @stop_flag.true?
   end
 
+  def with_pending_confirmation_queue(queue)
+    @pending_queue_mutex.synchronize { @pending_confirmation_queue = queue }
+    yield
+  ensure
+    @pending_queue_mutex.synchronize { @pending_confirmation_queue = nil }
+  end
+
+  def wall_clock_remaining
+    return WALL_CLOCK_SECONDS unless @started_monotonic
+    elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - @started_monotonic
+    [WALL_CLOCK_SECONDS - elapsed, 0].max
+  end
+
+  def emit_requires_confirmation(envelope)
+    emit(envelope)
+  end
+
   # ──────────────────────────────────────────────────────────────────────────
   # The main loop. Spawned in a Thread by AssistantChannel#run_prompt.
   # ──────────────────────────────────────────────────────────────────────────
   def run
-    started_monotonic = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    @started_monotonic = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    started_monotonic = @started_monotonic
     turn_count = 0
 
     @flush_timer.execute
+    @ai_session = AiSession.create!(
+      user: @user,
+      device: @device,
+      started_at: Time.current,
+      model: @model
+    )
 
     loop do
       # AGENT-07 / AGENT-05 / AGENT-04 turn-boundary checks
@@ -102,8 +153,10 @@ class AgentRunner
         return broadcast_done(:max_turns)
       end
 
+      AiUsage.refuse_if_exceeded!(@user)
+
       # AGENT-02 / AGENT-09: call OpenRouter with the running message history.
-      finish_reason, assistant_msg = @client.stream_chat_completion(
+      finish_reason, assistant_msg, usage = @client.stream_chat_completion(
         messages: @messages,
         tools:    AiTools.all_definitions,
         model:    @model
@@ -112,6 +165,15 @@ class AgentRunner
       end
 
       @messages << assistant_msg
+
+      if usage
+        input_tokens  = usage["prompt_tokens"].to_i + usage["reasoning_tokens"].to_i
+        output_tokens = usage["completion_tokens"].to_i
+        new_total = AiUsage.charge!(@user, input_tokens: input_tokens, output_tokens: output_tokens)
+        @session_input_tokens += input_tokens
+        @session_output_tokens += output_tokens
+        maybe_emit_quota_warning(new_total)
+      end
 
       if finish_reason == "tool_calls"
         handled = handle_tool_calls(assistant_msg["tool_calls"])
@@ -123,6 +185,9 @@ class AgentRunner
         return broadcast_done(:completed)
       end
     end
+  rescue AiUsage::QuotaExceededError => e
+    Rails.logger.warn "[AgentRunner] quota exceeded: user=#{@user.id} used=#{e.tokens_used}/#{e.limit}"
+    broadcast_done(:quota, tokens_used: e.tokens_used, limit: e.limit)
   rescue OpenRouterClient::OpenRouterError => e
     Rails.logger.warn "[AgentRunner] openrouter error: #{e.class}"
     broadcast_error(source: "openrouter", message: e.message)
@@ -137,6 +202,15 @@ class AgentRunner
     # STREAM-05 final flush: drain any tokens left in the buffer.
     flush_tokens
     @flush_timer&.shutdown
+    if @ai_session && @ai_session.ended_at.nil?
+      @ai_session.update!(
+        ended_at: Time.current,
+        turn_count: turn_count.to_i,
+        input_tokens: @session_input_tokens,
+        output_tokens: @session_output_tokens,
+        stop_reason: @stop_reason.presence || "error"
+      )
+    end
     # STREAM-06 fail-safe terminator: if the loop somehow exited without calling
     # broadcast_done / broadcast_error (e.g. Thread#kill before any rescue ran),
     # emit one ourselves so the frontend never sees a frozen spinner.
@@ -217,7 +291,7 @@ class AgentRunner
            name: name, label: tool_klass::HUMAN_LABEL,
            args: args, tool_call_id: tool_call_id)
 
-      result = tool_klass.new(device: @device).call(args.is_a?(Hash) ? args.transform_keys(&:to_sym) : {})
+      result = tool_klass.new(device: @device, agent_runner: self).call(args.is_a?(Hash) ? args.transform_keys(&:to_sym) : {})
 
       # STREAM-07: broadcast the result envelope; raw OpenRouter JSON never broadcast.
       emit(type: "tool_call_result",
@@ -299,13 +373,33 @@ class AgentRunner
     ActionCable.server.broadcast(stream_name, envelope)
   end
 
+  def maybe_emit_quota_warning(new_total)
+    limit = AiUsage::ROLE_LIMITS.fetch(@user.role.to_s)
+    return unless new_total >= (0.8 * limit)
+
+    should_emit = if @quota_warning_emitted.respond_to?(:compare_and_set)
+                    @quota_warning_emitted.compare_and_set(false, true)
+                  else
+                    @quota_warning_mutex.synchronize do
+                      next false if @quota_warning_emitted.true?
+                      @quota_warning_emitted.make_true
+                      true
+                    end
+                  end
+    return unless should_emit
+
+    emit(type: "quota_warning", percent: 80, tokens_used: new_total, limit: limit)
+  end
+
   def broadcast_done(reason, **extra)
+    @stop_reason = reason.to_s
     flush_tokens  # ensure no tokens trail the done envelope
     emit({ type: "done", stop_reason: reason.to_s }.merge(extra))
     @terminated = true
   end
 
   def broadcast_error(source:, message:)
+    @stop_reason ||= "error"
     flush_tokens
     emit(type: "error", source: source, message: message)
     @terminated = true

@@ -132,4 +132,70 @@ RSpec.describe OpenRouterClient do
       }.to raise_error(ArgumentError, /ALLOWED_MODELS/)
     end
   end
+
+  describe "Phase 19: SYSTEM_PROMPT_TEMPLATE interpolation (D-05)" do
+    it "contains the platform and allowlist interpolation points" do
+      expect(described_class::SYSTEM_PROMPT_TEMPLATE).to include("%{platform}")
+      expect(described_class::SYSTEM_PROMPT_TEMPLATE).to include("%{allowlist}")
+    end
+
+    it "contains the locked allowed-commands line shape" do
+      expect(described_class::SYSTEM_PROMPT_TEMPLATE).to match(
+        /Allowed read-only commands on this %\{platform\} desktop: %\{allowlist\}\./
+      )
+    end
+
+    it "still contains the AGENT-09 locale directive" do
+      expect(described_class::SYSTEM_PROMPT_TEMPLATE).to include("same language as the user's last message")
+    end
+
+    it "format(...) produces an interpolated, non-frozen String" do
+      out = format(described_class::SYSTEM_PROMPT_TEMPLATE, platform: "linux", allowlist: "ls, cat, grep")
+      expect(out).to include("Allowed read-only commands on this linux desktop: ls, cat, grep.")
+      expect(out).not_to be_frozen
+    end
+  end
+
+  describe "Phase 19: stream_chat_completion captures `usage` block (3-tuple return)" do
+    let(:messages) { [{ role: "user", content: "hi" }] }
+    let(:tools)    { [] }
+
+    def drive_stream(fixture, chunk_size: 64)
+      allow(client.instance_variable_get(:@conn)).to receive(:post) do |&block|
+        req = OpenStruct.new(headers: {}, body: nil, options: OpenStruct.new)
+        block.call(req)
+        proc_cb = req.options.on_data
+        fixture.bytes.each_slice(chunk_size) do |slice|
+          chunk = slice.pack("c*").force_encoding("UTF-8")
+          proc_cb.call(chunk, chunk.bytesize, nil)
+        end
+        nil
+      end
+    end
+
+    it "returns [finish_reason, assistant_message, usage] when SSE final event includes usage" do
+      fixture =
+        OpenRouterStub.data_line(
+          "choices" => [{ "index" => 0, "delta" => { "content" => "ok" } }]
+        ) +
+        OpenRouterStub.data_line(
+          "choices" => [{ "index" => 0, "delta" => {}, "finish_reason" => "stop" }],
+          "usage" => { "prompt_tokens" => 50, "completion_tokens" => 100, "total_tokens" => 150 }
+        ) +
+        OpenRouterStub.done_line
+      drive_stream(fixture)
+
+      finish_reason, _msg, usage = client.stream_chat_completion(messages: messages, tools: tools)
+      expect(finish_reason).to eq("stop")
+      expect(usage["prompt_tokens"]).to eq(50)
+      expect(usage["completion_tokens"]).to eq(100)
+      expect(usage["total_tokens"]).to eq(150)
+    end
+
+    it "returns nil for usage when SSE stream has no usage block" do
+      drive_stream(OpenRouterStub.token_stream(fragments: ["ok"], finish_reason: "stop"))
+      _finish_reason, _msg, usage = client.stream_chat_completion(messages: messages, tools: tools)
+      expect(usage).to be_nil
+    end
+  end
 end

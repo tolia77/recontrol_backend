@@ -4,7 +4,7 @@ require "rails_helper"
 
 RSpec.describe AgentRunner do
   let(:user)          { create(:user) }
-  let(:device)        { create(:device, user: user) }
+  let(:device)        { create(:device, user: user, platform_name: "linux") }
   let(:session_token) { SecureRandom.uuid }
   let(:client)        { instance_double(OpenRouterClient) }
   let(:captured)      { [] }
@@ -285,7 +285,7 @@ RSpec.describe AgentRunner do
     it "accumulates tool result text into bounded @history_text" do
       tc = { "id" => "tc-1", "type" => "function",
              "function" => { "name" => "run_command",
-                             "arguments" => { binary: "echo", args: ["hi"], cwd: "/tmp" }.to_json } }
+                             "arguments" => { binary: "ls", args: ["/tmp"], cwd: "/tmp" }.to_json } }
       @phase = 0
       allow(client).to receive(:stream_chat_completion) do
         @phase += 1
@@ -309,7 +309,7 @@ RSpec.describe AgentRunner do
   # Test 15: AGENT-09 system prompt threading
   # ──────────────────────────────────────────────────────────────────────────
   describe "system prompt + user prompt threading (AGENT-09)" do
-    it "passes the OpenRouterClient::SYSTEM_PROMPT_TEMPLATE as the first message and the user prompt second" do
+    it "passes an interpolated system prompt as the first message and the user prompt second" do
       captured_messages = nil
       allow(client).to receive(:stream_chat_completion) do |args, **|
         captured_messages = args.is_a?(Hash) ? args[:messages] : nil
@@ -325,7 +325,7 @@ RSpec.describe AgentRunner do
 
       expect(captured_messages).to be_an(Array)
       expect(captured_messages.first[:role]).to eq("system")
-      expect(captured_messages.first[:content]).to eq(OpenRouterClient::SYSTEM_PROMPT_TEMPLATE)
+      expect(captured_messages.first[:content]).to include("Allowed read-only commands on this linux desktop:")
       expect(captured_messages[1][:role]).to eq("user")
       expect(captured_messages[1][:content]).to eq("list /tmp")
     end
@@ -351,6 +351,242 @@ RSpec.describe AgentRunner do
       # before the done envelope. Token strings concatenated.
       expect(token_events).not_to be_empty
       expect(token_events.map { |_, p| p[:content] }.join).to eq("Hello world")
+    end
+  end
+
+  describe "Phase 19: system prompt platform allowlist injection (D-05)" do
+    let(:linux_device)   { create(:device, user: user, platform_name: "linux") }
+    let(:windows_device) { create(:device, user: user, platform_name: "windows") }
+
+    it "interpolates linux platform_name and the linux allow-list keys" do
+      runner = AgentRunner.new(
+        user: user, device: linux_device, prompt: "go",
+        model: "anthropic/claude-3.5-sonnet", session_token: SecureRandom.uuid, openrouter_client: client
+      )
+      system_msg = runner.instance_variable_get(:@messages)[0][:content]
+      expect(system_msg).to include("Allowed read-only commands on this linux desktop:")
+      expect(system_msg).to include("ls")
+      expect(system_msg).to include("cat")
+      expect(system_msg).to include("grep")
+      expect(system_msg).not_to include(", rm,")
+      expect(system_msg).not_to include(", sudo,")
+    end
+
+    it "interpolates windows platform_name and the windows pathmap keys" do
+      runner = AgentRunner.new(
+        user: user, device: windows_device, prompt: "go",
+        model: "anthropic/claude-3.5-sonnet", session_token: SecureRandom.uuid, openrouter_client: client
+      )
+      system_msg = runner.instance_variable_get(:@messages)[0][:content]
+      expect(system_msg).to include("Allowed read-only commands on this windows desktop:")
+      expect(system_msg).to include("tasklist")
+      expect(system_msg).to include("findstr")
+    end
+
+    it "falls back to unknown platform with empty allowlist when platform_name is nil" do
+      nil_platform_device = build(:device, user: user, platform_name: nil)
+      nil_platform_device.save!(validate: false)
+      runner = AgentRunner.new(
+        user: user, device: nil_platform_device, prompt: "go",
+        model: "anthropic/claude-3.5-sonnet", session_token: SecureRandom.uuid, openrouter_client: client
+      )
+      system_msg = runner.instance_variable_get(:@messages)[0][:content]
+      expect(system_msg).to include("Allowed read-only commands on this unknown desktop: (none).")
+    end
+  end
+
+  describe "Phase 19: request_stop sentinel push (D-07 / SAFETY-09)" do
+    let(:runner) do
+      AgentRunner.new(
+        user: user, device: device, prompt: "go",
+        model: "anthropic/claude-3.5-sonnet", session_token: SecureRandom.uuid, openrouter_client: client
+      )
+    end
+
+    it "flips @stop_flag and pushes user_stopped sentinel onto @pending_confirmation_queue when non-nil" do
+      queue = Queue.new
+      runner.with_pending_confirmation_queue(queue) do
+        runner.request_stop
+        expect(runner.stop_flag_set?).to be(true)
+        expect(queue.pop(true)).to eq({ decision: "user_stopped" })
+      end
+    end
+
+    it "is a no-op on the queue side when @pending_confirmation_queue is nil" do
+      expect { runner.request_stop }.not_to raise_error
+      expect(runner.stop_flag_set?).to be(true)
+    end
+  end
+
+  describe "Phase 19: confirmation queue helpers" do
+    let(:runner) do
+      AgentRunner.new(
+        user: user, device: device, prompt: "go",
+        model: "anthropic/claude-3.5-sonnet", session_token: SecureRandom.uuid, openrouter_client: client
+      )
+    end
+
+    it "with_pending_confirmation_queue sets and clears the slot" do
+      queue = Queue.new
+      expect(runner.instance_variable_get(:@pending_confirmation_queue)).to be_nil
+      runner.with_pending_confirmation_queue(queue) do
+        expect(runner.instance_variable_get(:@pending_confirmation_queue)).to be(queue)
+      end
+      expect(runner.instance_variable_get(:@pending_confirmation_queue)).to be_nil
+    end
+
+    it "with_pending_confirmation_queue clears the slot even when the block raises" do
+      queue = Queue.new
+      expect {
+        runner.with_pending_confirmation_queue(queue) { raise "boom" }
+      }.to raise_error("boom")
+      expect(runner.instance_variable_get(:@pending_confirmation_queue)).to be_nil
+    end
+
+    it "wall_clock_remaining returns a non-negative Float" do
+      val = runner.wall_clock_remaining
+      expect(val).to be_a(Numeric)
+      expect(val).to be >= 0
+      expect(val).to be <= AgentRunner::WALL_CLOCK_SECONDS
+    end
+
+    it "emit_requires_confirmation broadcasts the envelope via emit" do
+      one = []
+      allow(ActionCable.server).to receive(:broadcast) { |_, payload| one << payload }
+      runner.emit_requires_confirmation(
+        type: "requires_confirmation",
+        confirmation_id: "abc",
+        label: "Run",
+        reason: :deny_list,
+        zone: "deny_list"
+      )
+      expect(one.size).to eq(1)
+      expect(one[0][:type]).to eq("requires_confirmation")
+      expect(one[0][:confirmation_id]).to eq("abc")
+      expect(one[0][:seq]).to be_a(Integer)
+      expect(one[0][:session_token]).to eq(runner.session_token)
+    end
+  end
+
+  describe "Phase 19: AiSession lifecycle (AUDIT-01)" do
+    it "creates an AiSession row at run start, UPDATEs it in the ensure block" do
+      allow(client).to receive(:stream_chat_completion).and_return(
+        ["stop", { "role" => "assistant", "content" => "done" }, { "prompt_tokens" => 50, "completion_tokens" => 100, "total_tokens" => 150 }]
+      )
+
+      expect { make_runner.run }.to change(AiSession, :count).by(1)
+
+      sess = AiSession.last
+      expect(sess.user_id).to eq(user.id)
+      expect(sess.device_id).to eq(device.id)
+      expect(sess.started_at).to be_present
+      expect(sess.ended_at).to be_present
+      expect(sess.stop_reason).to eq("completed")
+      expect(sess.model).to eq("anthropic/claude-3.5-sonnet")
+      expect(sess.input_tokens).to eq(50)
+      expect(sess.output_tokens).to eq(100)
+      expect(sess.turn_count).to eq(0)
+    end
+  end
+
+  describe "Phase 19: per-turn AiUsage.charge! (QUOTA-04 / D-11)" do
+    let(:admin_user) { create(:user, role: :admin) }
+    let(:admin_device) { create(:device, user: admin_user, platform_name: "linux") }
+
+    def make_admin_runner
+      AgentRunner.new(
+        user: admin_user, device: admin_device, prompt: "go",
+        model: "anthropic/claude-3.5-sonnet", session_token: SecureRandom.uuid, openrouter_client: client
+      )
+    end
+
+    it "charges AiUsage with prompt_tokens + reasoning_tokens.to_i and completion_tokens" do
+      allow(client).to receive(:stream_chat_completion).and_return(
+        ["stop", { "role" => "assistant", "content" => "ok" },
+         { "prompt_tokens" => 100, "completion_tokens" => 50, "reasoning_tokens" => 20, "total_tokens" => 170 }]
+      )
+      expect { make_admin_runner.run }.to change { AiUsage.current_total(admin_user) }.by(170)
+    end
+
+    it "skips the charge step when usage is nil" do
+      allow(client).to receive(:stream_chat_completion).and_return(
+        ["stop", { "role" => "assistant", "content" => "ok" }, nil]
+      )
+      expect { make_admin_runner.run }.not_to change { AiUsage.current_total(admin_user) }
+    end
+  end
+
+  describe "Phase 19: 80% warning emit-once-per-run (QUOTA-05)" do
+    let(:client_user) { create(:user, role: :client) }
+    let(:client_device) { create(:device, user: client_user, platform_name: "linux") }
+
+    def make_client_runner
+      AgentRunner.new(
+        user: client_user, device: client_device, prompt: "go",
+        model: "anthropic/claude-3.5-sonnet", session_token: SecureRandom.uuid, openrouter_client: client
+      )
+    end
+
+    before do
+      AiUsage.create!(user: client_user, usage_date: Date.current, tokens_used: 7_500)
+    end
+
+    it "emits quota_warning exactly once when crossing 80%" do
+      invocations = 0
+      allow(client).to receive(:stream_chat_completion) do
+        invocations += 1
+        if invocations == 1
+          ["tool_calls", { "role" => "assistant", "content" => "", "tool_calls" => [] },
+           { "prompt_tokens" => 600, "completion_tokens" => 400 }]
+        else
+          ["stop", { "role" => "assistant", "content" => "done" },
+           { "prompt_tokens" => 600, "completion_tokens" => 400 }]
+        end
+      end
+
+      make_client_runner.run
+      quota_warns = captured.select { |_, p| p[:type] == "quota_warning" }
+      expect(quota_warns.size).to eq(1)
+      expect(quota_warns.first[1][:percent]).to eq(80)
+      expect(quota_warns.first[1][:limit]).to eq(10_000)
+    end
+  end
+
+  describe "Phase 19: hard cap -> done(:quota) (QUOTA-06)" do
+    let(:client_user) { create(:user, role: :client) }
+    let(:client_device) { create(:device, user: client_user, platform_name: "linux") }
+
+    def make_client_runner
+      AgentRunner.new(
+        user: client_user, device: client_device, prompt: "go",
+        model: "anthropic/claude-3.5-sonnet", session_token: SecureRandom.uuid, openrouter_client: client
+      )
+    end
+
+    before do
+      AiUsage.create!(user: client_user, usage_date: Date.current, tokens_used: 9_900)
+    end
+
+    it "broadcasts done(:quota) when AiUsage.charge! raises QuotaExceededError" do
+      allow(client).to receive(:stream_chat_completion).and_return(
+        ["stop", { "role" => "assistant", "content" => "ok" },
+         { "prompt_tokens" => 50, "completion_tokens" => 100 }]
+      )
+      make_client_runner.run
+      done = captured.reverse.find { |_, p| p[:type] == "done" }
+      expect(done[1][:stop_reason]).to eq("quota")
+      expect(done[1][:tokens_used]).to be >= 10_000
+      expect(done[1][:limit]).to eq(10_000)
+    end
+
+    it "refuses pre-call when already at limit (QUOTA-04 pre-call check)" do
+      AiUsage.where(user: client_user, usage_date: Date.current).delete_all
+      AiUsage.create!(user: client_user, usage_date: Date.current, tokens_used: 10_001)
+
+      expect(client).not_to receive(:stream_chat_completion)
+      make_client_runner.run
+      done = captured.reverse.find { |_, p| p[:type] == "done" }
+      expect(done[1][:stop_reason]).to eq("quota")
     end
   end
 end
