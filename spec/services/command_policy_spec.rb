@@ -49,6 +49,34 @@ RSpec.describe CommandPolicy do
       expect(v.decision).to eq(:deny)
       expect(v.reason).to eq(:metacharacter)
     end
+
+    context "VERIFY-02 explicit attack-form scenarios" do
+      # Per CONTEXT D-10: extend Phase 18/19 specs in place rather than duplicating.
+      # Each attack-form below is enumerated in REQUIREMENTS.md VERIFY-02.
+      #
+      # Argument splitting: AgentRunner surfaces a tool call as {binary:, args:[...]}
+      # -- the LLM emits the binary and args separately. The policy must reject ANY
+      # metacharacter regardless of which slot it lands in. We feed both halves
+      # by splitting on the first whitespace; any metacharacter in either slot
+      # must yield decision: :deny / reason: :metacharacter.
+      {
+        "ls; echo pwned"         => :metacharacter,
+        "ls $(echo /tmp)"        => :metacharacter,
+        "ls `echo /tmp`"         => :metacharacter,
+        "cat /etc/passwd | head" => :metacharacter
+      }.each do |attack_form, expected_reason|
+        it "VERIFY-02: rejects attack-form #{attack_form.inspect} (#{expected_reason})" do
+          parts = attack_form.split(" ", 2)
+          binary = parts[0]
+          rest   = parts[1].to_s
+          args   = rest.empty? ? [] : [rest]
+
+          v = described_class.evaluate(binary: binary, args: args, cwd: "/", device: linux_device)
+          expect(v.decision).to eq(:deny)
+          expect(v.reason).to eq(expected_reason)
+        end
+      end
+    end
   end
 
   describe ".evaluate -- SAFETY-06 path-shadow / absolute-path resolution" do

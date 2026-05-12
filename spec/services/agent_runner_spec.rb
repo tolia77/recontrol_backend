@@ -161,6 +161,39 @@ RSpec.describe AgentRunner do
       expect(done[1][:stop_reason]).to eq("loop_detected")
       expect(done[1][:message]).to match(/Agent appears stuck/)
     end
+
+    it "VERIFY-06: synthetic-prompt 3-identical-call scenario halts at the 2nd call" do
+      # Per CONTEXT D-09 / D-10: VERIFY-06 extends this existing describe in place.
+      # The model emits 3 identical tool_calls; the loop-detector must halt at the
+      # 2nd consecutive identical call. We assert (a) the done.stop_reason is
+      # "loop_detected" and (b) exactly ONE tool_call_start broadcast was emitted --
+      # because the detector aborts BEFORE dispatching the 2nd identical call.
+      tc = {
+        "id" => "loop",
+        "type" => "function",
+        "function" => {
+          "name" => "run_command",
+          "arguments" => { binary: "ls", args: ["-la"], cwd: "/tmp" }.to_json
+        }
+      }
+
+      # Three returns staged; if loop-detector fires correctly, the 3rd is never consumed.
+      allow(client).to receive(:stream_chat_completion).and_return(
+        ["tool_calls", { "role" => "assistant", "content" => "", "tool_calls" => [tc] }],
+        ["tool_calls", { "role" => "assistant", "content" => "", "tool_calls" => [tc] }],
+        ["tool_calls", { "role" => "assistant", "content" => "", "tool_calls" => [tc] }]
+      )
+
+      make_runner.run
+
+      done = captured.find { |_, p| p[:type] == "done" }
+      expect(done).not_to be_nil
+      expect(done[1][:stop_reason]).to eq("loop_detected")
+
+      # Halt BEFORE dispatching the 2nd identical call: exactly one tool_call_start emitted.
+      tool_call_starts = captured.select { |_, p| p[:type] == "tool_call_start" }
+      expect(tool_call_starts.length).to eq(1)
+    end
   end
 
   # ──────────────────────────────────────────────────────────────────────────

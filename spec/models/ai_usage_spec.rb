@@ -106,5 +106,42 @@ RSpec.describe AiUsage, type: :model do
     ensure
       ActiveRecord::Base.connection_pool.disconnect!
     end
+
+    it "VERIFY-03: 4 concurrent sessions near 80% threshold never observe over-limit usage" do
+      # Per CONTEXT D-09 / D-10: VERIFY-03 extends this existing describe in place.
+      # Seed the user near 80% of the client role limit so the race window is at
+      # the precise quota boundary the operator would hit in production.
+      described_class.create!(user: user, usage_date: Date.current, tokens_used: 7_500)
+
+      concurrency_level = 4
+      delta_per_call    = 100
+      calls_per_thread  = 30
+      gate              = true
+
+      threads = concurrency_level.times.map do
+        Thread.new do
+          ActiveRecord::Base.connection_pool.with_connection do
+            true while gate
+            calls_per_thread.times do
+              begin
+                described_class.charge!(user, input_tokens: delta_per_call, output_tokens: 0)
+              rescue AiUsage::QuotaExceededError
+                # Expected once total crosses the role limit; loop continues so we
+                # confirm the post-overflow total still does not exceed the cap.
+                nil
+              end
+            end
+          end
+        end
+      end
+
+      gate = false
+      threads.each(&:join)
+
+      final_total = described_class.current_total(user)
+      expect(final_total).to be <= AiUsage::ROLE_LIMITS["client"]
+    ensure
+      ActiveRecord::Base.connection_pool.disconnect!
+    end
   end
 end
