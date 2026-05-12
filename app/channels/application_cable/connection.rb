@@ -12,6 +12,10 @@ module ApplicationCable
     end
 
     def disconnect
+      # Connections rejected during authorize_connection! never had identifiers
+      # set, and Rails still fires disconnect for them. Skip the noise.
+      return if client_type.nil?
+
       Rails.logger.info "[Cable] disconnect started user_id=#{current_user&.id} " \
                         "client_type=#{client_type} device_id=#{current_device&.id}"
 
@@ -19,7 +23,11 @@ module ApplicationCable
       when "desktop"
         deactivate_desktop_device
       when "web"
-        release_web_device
+        # Clean unmount/close case: clear web presence immediately so the device
+        # flips back to "active" without waiting for the heartbeat TTL to lapse.
+        # If disconnect doesn't fire (tab killed, network drop), the TTL on the
+        # cache entry is the safety net.
+        Rails.cache.delete(Device.web_presence_key(target_device.id)) if target_device
       end
     end
 
@@ -66,8 +74,7 @@ module ApplicationCable
       return unless current_device
 
       Rails.logger.info "[Cable] Activating desktop device id=#{current_device.id}"
-      new_status = web_clients_active?(current_device) ? "used" : "active"
-      current_device.update(status: new_status, last_active_at: Time.current)
+      current_device.update(status: "active", last_active_at: Time.current)
     end
 
     def deactivate_desktop_device
@@ -131,24 +138,6 @@ module ApplicationCable
 
     def device_shared?(device)
       DeviceShare.exists?(user_id: current_user.id, device_id: device.id)
-    end
-
-    def release_web_device
-      return unless target_device&.status == "used"
-      return if web_clients_active?(target_device)
-
-      target_device.update!(status: "active")
-    end
-
-    # Counts web ActionCable connections targeting the given device, excluding self.
-    # Per-process only: assumes a single Puma worker. With multiple workers, use a
-    # Redis-backed presence counter instead.
-    def web_clients_active?(device)
-      ActionCable.server.connections.any? do |conn|
-        conn != self &&
-          conn.client_type == "web" &&
-          conn.target_device&.id == device.id
-      end
     end
   end
 end

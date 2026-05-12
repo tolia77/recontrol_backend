@@ -44,7 +44,9 @@ class CommandChannel < ApplicationCable::Channel
     end
 
     stream_from user_to_device_stream(connection.target_device)
-    connection.target_device.update!(status: "used")
+    # Web "in-use" presence is TTL-tracked in Rails.cache. Mark on subscribe so
+    # the very first /devices read sees "used", then refresh on each heartbeat.
+    Device.mark_web_present(connection.target_device.id)
   end
 
   def valid_desktop_subscription?
@@ -69,6 +71,11 @@ class CommandChannel < ApplicationCable::Channel
     command = data["command"]
     payload = data["payload"]
     message_id = data["id"]
+
+    if command == "heartbeat"
+      Device.mark_web_present(connection.target_device.id) if connection.target_device
+      return
+    end
 
     unless owner_or_allowed_command?(command)
       Rails.logger.info "[Channel] Blocking command '#{command}' for " \
