@@ -230,6 +230,7 @@ RSpec.describe AiTools::Base do
       expect(runner.captured_envelopes.last).to include(
         type: "requires_confirmation",
         confirmation_id: allow_id,
+        tool_call_id: match(/\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/),
         label: tool.class::HUMAN_LABEL,
         command: "ls",
         args: ["-la"],

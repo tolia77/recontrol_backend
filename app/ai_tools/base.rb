@@ -118,18 +118,23 @@ module AiTools
       return { error: "invalid_arguments", details: result.errors.to_h } if result.failure?
       validated = result.to_h
 
+      # D-11 (Phase 20 CONTEXT): mint tool_call_id BEFORE the policy gate so the
+      # requires_confirmation envelope can carry it. The frontend transcript reducer
+      # keys rows on tool_call_id (Phase 20 D-05 "one row per tool_call_id"); the
+      # confirmation card and the eventual tool_call_result share the same row.
+      tool_call_id = SecureRandom.uuid
+
       verdict = policy_verdict(validated)
       case verdict.decision
       when :deny
         return { error: "policy_denied", reason: verdict.reason }
       when :needs_confirm
-        confirm_result = await_confirmation(validated, verdict)
+        confirm_result = await_confirmation(validated, verdict, tool_call_id: tool_call_id)
         return confirm_result if confirm_result.is_a?(Hash) && confirm_result[:error]
       end
 
-      payload      = build_payload(validated)
-      tool_call_id = SecureRandom.uuid
-      response     = CommandBridge.dispatch(
+      payload  = build_payload(validated)
+      response = CommandBridge.dispatch(
         device: @device,
         payload: payload,
         tool_call_id: tool_call_id
@@ -154,11 +159,11 @@ module AiTools
       )
     end
 
-    def await_confirmation(args, verdict)
+    def await_confirmation(args, verdict, tool_call_id:)
       confirmation_id = SecureRandom.uuid
       queue = ConfirmationRegistry.register(confirmation_id)
 
-      envelope = build_requires_confirmation_envelope(args, verdict, confirmation_id)
+      envelope = build_requires_confirmation_envelope(args, verdict, confirmation_id, tool_call_id)
       if @agent_runner&.respond_to?(:emit_requires_confirmation)
         @agent_runner.emit_requires_confirmation(envelope)
       else
@@ -195,11 +200,12 @@ module AiTools
       ConfirmationRegistry.delete(confirmation_id)
     end
 
-    def build_requires_confirmation_envelope(args, verdict, confirmation_id)
+    def build_requires_confirmation_envelope(args, verdict, confirmation_id, tool_call_id)
       zone = verdict.reason == :deny_list ? "deny_list" : "outside_list"
       {
         type: "requires_confirmation",
         confirmation_id: confirmation_id,
+        tool_call_id: tool_call_id,
         label: self.class::HUMAN_LABEL,
         command: args[:binary],
         args: args[:args] || [],
