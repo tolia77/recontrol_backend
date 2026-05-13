@@ -48,6 +48,7 @@ module RecontrolBackend
       next unless defined?(::AiTools)
       Dir.glob(Rails.root.join("app/ai_tools/*.rb")).sort.each do |path|
         const_name = File.basename(path, ".rb").camelize
+        next if const_name == "Base"
         ::AiTools.const_get(const_name)
       end
 
@@ -55,6 +56,24 @@ module RecontrolBackend
       # the host running the Rails server. This is a forensics aid; the policy
       # itself fails closed at request time regardless.
       ::CommandPolicy.warn_missing_paths! if defined?(::CommandPolicy)
+    end
+
+    # Dev-only hot-reload support for app/ai_tools/. Zeitwerk reloads the
+    # subclass files on edit, but stale class references stay cached in
+    # AiTools::REGISTRY because the registry is populated only at boot via
+    # the after_initialize block above. `to_prepare` fires on every Rails
+    # reload in dev: we clear the registry and re-resolve each tool through
+    # the live autoloader so AiTools.fetch returns the freshly-loaded class.
+    # First-boot guard: REGISTRY isn't defined yet on the very first prepare
+    # callback (it's defined when AiTools::Base autoloads); skip until then.
+    Rails.application.config.to_prepare do
+      next unless defined?(::AiTools::REGISTRY)
+      ::AiTools::REGISTRY.clear
+      Dir.glob(Rails.root.join("app/ai_tools/*.rb")).sort.each do |path|
+        const_name = File.basename(path, ".rb").camelize
+        next if const_name == "Base"
+        ::AiTools.const_get(const_name)
+      end
     end
 
     # Configuration for the application, engines, and railties goes here.
