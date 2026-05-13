@@ -32,9 +32,26 @@ RSpec.describe OpenRouterClient do
   end
 
   describe ".api_key" do
-    it "raises NetworkError when credentials are missing" do
-      allow(Rails.application).to receive(:credentials).and_return(double(dig: nil))
-      expect { described_class.api_key }.to raise_error(described_class::NetworkError, /credentials missing/)
+    around do |example|
+      original = ENV.fetch("OPENROUTER_API_KEY", nil)
+      example.run
+    ensure
+      original.nil? ? ENV.delete("OPENROUTER_API_KEY") : ENV["OPENROUTER_API_KEY"] = original
+    end
+
+    it "raises NetworkError when OPENROUTER_API_KEY env var is unset" do
+      ENV.delete("OPENROUTER_API_KEY")
+      expect { described_class.api_key }.to raise_error(described_class::NetworkError, /OPENROUTER_API_KEY/)
+    end
+
+    it "raises NetworkError when OPENROUTER_API_KEY env var is blank" do
+      ENV["OPENROUTER_API_KEY"] = "   "
+      expect { described_class.api_key }.to raise_error(described_class::NetworkError, /OPENROUTER_API_KEY/)
+    end
+
+    it "returns the stripped key when OPENROUTER_API_KEY is set" do
+      ENV["OPENROUTER_API_KEY"] = "  sk-or-v1-test  "
+      expect(described_class.api_key).to eq("sk-or-v1-test")
     end
   end
 

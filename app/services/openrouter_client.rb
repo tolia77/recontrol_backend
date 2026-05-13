@@ -71,10 +71,12 @@ class OpenRouterClient
   READ_TIMEOUT_S    = 120  # MUST be >= AgentRunner's WALL_CLOCK_SECONDS so the SSE
                            # read does not abort earlier than the loop-level cap.
 
-  # D-03: API key from Rails credentials only. Never ENV, never VITE_*.
+  # API key from ENV. Frontend rule still holds (never VITE_*); only the
+  # backend storage choice changed from Rails encrypted credentials to ENV.
   def self.api_key
-    Rails.application.credentials.dig(:openrouter, :api_key) ||
-      raise(NetworkError, "openrouter credentials missing")
+    key = ENV["OPENROUTER_API_KEY"].to_s.strip
+    raise(NetworkError, "OPENROUTER_API_KEY env var missing") if key.empty?
+    key
   end
 
   def initialize(api_key: self.class.api_key, model: DEFAULT_MODEL)
