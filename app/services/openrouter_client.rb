@@ -34,7 +34,7 @@ class OpenRouterClient
   # ──────────────────────────────────────────────────────────────────────────
   # Constants (D-02, AGENT-08, AGENT-09)
   # ──────────────────────────────────────────────────────────────────────────
-  DEFAULT_MODEL = ENV.fetch("OPENROUTER_MODEL", "anthropic/claude-sonnet-4.6").freeze
+  DEFAULT_MODEL = ENV.fetch("OPENROUTER_MODEL", "anthropic/claude-haiku-4.5").freeze
 
   # AGENT-08: single source of truth for the operator-selectable model
   # allowlist. AssistantChannel#allowed_models reads this constant
@@ -42,7 +42,7 @@ class OpenRouterClient
   ALLOWED_MODELS = [
     "anthropic/claude-sonnet-4.6",
     "anthropic/claude-haiku-4.5",
-    "openai/gpt-5.5-pro",
+    "openai/gpt-5.4",
     "openai/gpt-5.4-mini",
     "google/gemini-2.5-flash"
   ].freeze
