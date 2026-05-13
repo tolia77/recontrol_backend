@@ -3,8 +3,8 @@
 require "dry-schema"
 require "securerandom"
 
-# AiTools is the umbrella module for the four LLM-callable tools (run_command,
-# list_processes, kill_process, list_files). Each concrete tool subclasses
+# AiTools is the umbrella module for the LLM-callable tools (run_command,
+# list_processes, kill_process). Each concrete tool subclasses
 # AiTools::Base; the Base.const_added(:NAME) hook auto-registers the subclass
 # under its NAME so `AiTools.fetch("run_command")` returns the class object.
 #
