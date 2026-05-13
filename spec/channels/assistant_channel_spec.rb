@@ -105,6 +105,47 @@ RSpec.describe AssistantChannel, type: :channel do
       thread.join(1.0)
     end
 
+    it "honors a UUID-shaped session_token supplied by the frontend" do
+      fake_runner = instance_double(AgentRunner, run: nil)
+      supplied = "d15505a6-82d3-4baa-9a4d-c03c631aa43b"
+
+      expect(AgentRunner).to receive(:new).with(
+        hash_including(session_token: supplied)
+      ).and_return(fake_runner)
+
+      transmitted = []
+      allow(subscription).to receive(:transmit) { |payload| transmitted << payload }
+
+      perform :run_prompt, {
+        "prompt" => "list /tmp",
+        "model" => "anthropic/claude-sonnet-4.6",
+        "session_token" => supplied
+      }
+      subscription.instance_variable_get(:@agent_thread)&.join(1.0)
+
+      accepted = transmitted.find { |p| p[:type] == "accepted" }
+      expect(accepted[:session_token]).to eq(supplied)
+    end
+
+    it "ignores a malformed session_token and mints a fresh UUID" do
+      fake_runner = instance_double(AgentRunner, run: nil)
+      allow(AgentRunner).to receive(:new).and_return(fake_runner)
+
+      transmitted = []
+      allow(subscription).to receive(:transmit) { |payload| transmitted << payload }
+
+      perform :run_prompt, {
+        "prompt" => "x",
+        "model" => "anthropic/claude-sonnet-4.6",
+        "session_token" => "not-a-uuid"
+      }
+      subscription.instance_variable_get(:@agent_thread)&.join(1.0)
+
+      accepted = transmitted.find { |p| p[:type] == "accepted" }
+      expect(accepted[:session_token]).to match(/\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/)
+      expect(accepted[:session_token]).not_to eq("not-a-uuid")
+    end
+
     it "transmits accepted BEFORE spawning the thread (so the frontend has the session_token)" do
       fake_runner = instance_double(AgentRunner)
       allow(fake_runner).to receive(:run)

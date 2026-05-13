@@ -31,7 +31,12 @@ class AssistantChannel < ApplicationCable::Channel
       return
     end
 
-    @session_token = SecureRandom.uuid
+    # Phase 20: honor a frontend-supplied session_token when it is UUID-shaped
+    # so the reducer's STREAM-04 filter (transcriptReducer.ts) sees broadcasts
+    # tagged with the same token it minted at submit time. Fall back to a fresh
+    # SecureRandom.uuid for legacy callers (specs, older clients) that omit it.
+    client_token = data["session_token"].to_s
+    @session_token = uuid_v4_shape?(client_token) ? client_token : SecureRandom.uuid
 
     # AGENT-11 / STREAM-04: confirm acceptance BEFORE spawning the runner so the
     # frontend has the session_token in hand before any AgentRunner broadcast on
@@ -111,5 +116,11 @@ class AssistantChannel < ApplicationCable::Channel
 
   def allowed_models
     OpenRouterClient::ALLOWED_MODELS
+  end
+
+  UUID_V4_RE = /\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/i
+
+  def uuid_v4_shape?(value)
+    value.is_a?(String) && value.match?(UUID_V4_RE)
   end
 end
