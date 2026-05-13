@@ -28,14 +28,6 @@ module CommandPolicy
   # in the binary name itself is rejected with reason :metacharacter.
   METACHARACTERS = ["|", "&", ";", "$(", "`", "<", ">", "&&", "||"].freeze
 
-  # Standard system bin dirs scanned at request time when a binary is not in
-  # BINARY_PATHS. Resolution turns a hard-deny into an operator-confirm gate
-  # (:unverified zone) so the Allow/Deny card actually serves as the documented
-  # escape hatch instead of being a no-op for anything pre-author didn't list.
-  RUNTIME_RESOLVE_DIRS = {
-    "linux"   => %w[/usr/bin /usr/sbin /usr/local/bin /usr/local/sbin /bin /sbin].freeze,
-    "windows" => [].freeze
-  }.freeze
 
   # SAFETY-06 / D-04: per-platform absolute-path map. Backend rejects with
   # reason :unknown_binary if the requested binary is not in the map for
@@ -140,30 +132,18 @@ module CommandPolicy
       return Verdict.new(decision: :needs_confirm, reason: :outside_list, resolved_binary: resolved)
     end
 
-    # Pathmap miss: try to resolve at runtime by scanning standard system bin
-    # dirs. This converts the historical "hard-deny on anything unanticipated"
-    # behaviour into operator-confirm — the documented Allow/Deny escape hatch
-    # now actually fires for unknown binaries instead of silently failing.
-    runtime_path = runtime_resolve(bare_name, platform)
-    return Verdict.new(decision: :needs_confirm, reason: :unverified, resolved_binary: runtime_path) if runtime_path
+    # Pathmap miss: route through operator confirmation as :unverified instead
+    # of hard-denying. We don't resolve to an absolute path here -- the backend
+    # container has a different filesystem than the desktop, so scanning bin
+    # dirs locally would falsely reject binaries that exist on the operator's
+    # machine. Pass the bare name through; the desktop's Process.Start with
+    # UseShellExecute=false uses $PATH to resolve, and operator confirmation
+    # is the actual trust gate. This trades the SAFETY-06 absolute-path
+    # guarantee for usability of the documented Allow/Deny escape hatch --
+    # the operator visually approves the binary name before execution.
+    return Verdict.new(decision: :needs_confirm, reason: :unverified, resolved_binary: bare_name) if bare_name && !bare_name.empty?
 
     Verdict.new(decision: :deny, reason: :unknown_binary, resolved_binary: nil)
-  end
-
-  # Scans RUNTIME_RESOLVE_DIRS for the bare binary name. Returns the absolute
-  # path if found and executable, or nil otherwise. File.executable? rejects
-  # directories and symlinks-to-nothing, so the returned path is safe to pass
-  # to Process.Start downstream.
-  def runtime_resolve(bare_name, platform)
-    return nil if bare_name.nil? || bare_name.empty?
-    return nil if bare_name.include?("/") || bare_name.include?("\\")
-
-    dirs = RUNTIME_RESOLVE_DIRS[platform] || []
-    dirs.each do |dir|
-      candidate = File.join(dir, bare_name)
-      return candidate if File.executable?(candidate) && !File.directory?(candidate)
-    end
-    nil
   end
 
   # Boot-time fail-closed forensics check. Logs missing paths; does NOT raise.

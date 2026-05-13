@@ -11,14 +11,16 @@ RSpec.describe CommandPolicy do
     # Canonical form is `linux` / `windows`. Desktop clients send lowercase
     # via `LinuxSystemInfoService.GetPlatformName` / `WindowsSystemInfoService`;
     # the auth controller persists exactly what the client sends. Anything
-    # capitalised reaches the unknown_binary gate and is hard-denied — that
-    # is intentional: a mis-cased platform name is a bug at the source, not
-    # something this layer should paper over.
-    it "hard-denies `free` when device.platform_name is `Linux` (capital L)" do
+    # capitalised reaches the pathmap-miss path. Post-policy-rework that no
+    # longer hard-denies -- it routes through :needs_confirm/:unverified so
+    # the operator gets the Allow/Deny card. Mis-cased platform names still
+    # surface (the binary isn't silently allow-listed), just not as a hard
+    # deny without override.
+    it "routes `free` to :unverified when device.platform_name is `Linux` (capital L)" do
       capital_linux = instance_double("Device", platform_name: "Linux")
       v = described_class.evaluate(binary: "free", args: ["-h"], cwd: "/tmp", device: capital_linux)
-      expect(v.decision).to eq(:deny)
-      expect(v.reason).to eq(:unknown_binary)
+      expect(v.decision).to eq(:needs_confirm)
+      expect(v.reason).to eq(:unverified)
     end
   end
 
@@ -46,20 +48,29 @@ describe ".evaluate -- SAFETY-01 allow-list on Linux" do
     end
   end
 
-  describe ".evaluate -- unknown binary resolved at runtime (needs_confirm via unverified)" do
-    # Before this change, anything not in BINARY_PATHS was hard-denied with
-    # :unknown_binary. Now we scan standard system bin dirs and let the
-    # operator confirm via Allow/Deny.
-    it "resolves /usr/bin/setxkbmap and routes through :unverified when present on the host" do
-      skip "setxkbmap not installed on this host" unless File.executable?("/usr/bin/setxkbmap")
+  describe ".evaluate -- pathmap-miss binaries route via :unverified for operator confirm" do
+    # Backend cannot inspect the desktop's filesystem to verify a binary
+    # exists, so it doesn't try to. Any pathmap-miss name routes through
+    # :needs_confirm/:unverified with the bare name as resolved_binary; the
+    # operator approves visually, and the desktop's Process.Start uses $PATH
+    # to resolve. Genuine typos manifest as exec failures with stderr, not
+    # silent denials.
+    it "routes setxkbmap (and any other unlisted binary) to :needs_confirm/:unverified" do
       v = described_class.evaluate(binary: "setxkbmap", args: ["-layout", "ua"], cwd: "/", device: linux_device)
       expect(v.decision).to eq(:needs_confirm)
       expect(v.reason).to eq(:unverified)
-      expect(v.resolved_binary).to eq("/usr/bin/setxkbmap")
+      expect(v.resolved_binary).to eq("setxkbmap")
     end
 
-    it "still hard-denies as :unknown_binary when neither pathmap nor runtime scan resolves" do
-      v = described_class.evaluate(binary: "totally-not-a-real-binary-xyz", args: [], cwd: "/", device: linux_device)
+    it "routes a totally invented binary through :unverified (desktop exec will fail at run time)" do
+      v = described_class.evaluate(binary: "definitely-not-a-real-binary-xyz", args: [], cwd: "/", device: linux_device)
+      expect(v.decision).to eq(:needs_confirm)
+      expect(v.reason).to eq(:unverified)
+      expect(v.resolved_binary).to eq("definitely-not-a-real-binary-xyz")
+    end
+
+    it "hard-denies as :unknown_binary only on truly empty input" do
+      v = described_class.evaluate(binary: "", args: [], cwd: "/", device: linux_device)
       expect(v.decision).to eq(:deny)
       expect(v.reason).to eq(:unknown_binary)
     end
@@ -136,17 +147,22 @@ describe ".evaluate -- SAFETY-01 allow-list on Linux" do
     end
   end
 
-  describe ".evaluate -- D-04 unknown-binary refusal" do
-    it "rejects a Windows-only binary on Linux device" do
+  describe ".evaluate -- D-04 pathmap-miss routing through :unverified" do
+    # Post-policy-rework D-04 no longer means "hard-deny anything off the
+    # static map." Cross-platform names and unknown-platform devices now
+    # route through operator confirmation; the desktop's exec layer is the
+    # final arbiter (it'll surface a real "not found" if the binary truly
+    # doesn't exist on that machine).
+    it "routes a Windows-only binary on Linux device to :unverified" do
       v = described_class.evaluate(binary: "tasklist", args: [], cwd: "/", device: linux_device)
-      expect(v.decision).to eq(:deny)
-      expect(v.reason).to eq(:unknown_binary)
+      expect(v.decision).to eq(:needs_confirm)
+      expect(v.reason).to eq(:unverified)
     end
 
-    it "rejects a binary on an unknown platform (e.g. macos)" do
+    it "routes any binary on an unknown platform (e.g. macos) to :unverified" do
       v = described_class.evaluate(binary: "ls", args: [], cwd: "/", device: macos_device)
-      expect(v.decision).to eq(:deny)
-      expect(v.reason).to eq(:unknown_binary)
+      expect(v.decision).to eq(:needs_confirm)
+      expect(v.reason).to eq(:unverified)
     end
   end
 
