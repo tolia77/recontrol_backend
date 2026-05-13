@@ -142,8 +142,22 @@ class CommandChannel < ApplicationCable::Channel
       id: data["id"],
       status: data["status"]
     }.tap do |payload|
-      payload[:result] = data["result"] if data["result"]
+      # AI tool parse_response methods access nested fields via `dig(:result,
+      # :stdout)` etc. with symbol keys. The desktop response arrives as a
+      # JSON-parsed hash with string keys, so symbolize recursively at the
+      # boundary -- otherwise every dig returns nil and tools see empty
+      # results. Arrays of hashes (e.g. terminal.listProcesses) are recursed
+      # into so per-row keys symbolize too.
+      payload[:result] = deep_symbolize(data["result"]) if data["result"]
       payload[:error] = data["error"] if data["error"]
+    end
+  end
+
+  def deep_symbolize(obj)
+    case obj
+    when Hash  then obj.each_with_object({}) { |(k, v), h| h[k.to_sym] = deep_symbolize(v) }
+    when Array then obj.map { |item| deep_symbolize(item) }
+    else obj
     end
   end
 

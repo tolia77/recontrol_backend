@@ -8,9 +8,12 @@ module AiTools
   # desktop sends back.
   class ListProcesses < Base
     NAME        = "list_processes"
-    DESCRIPTION = "List the top 100 processes on the operator's connected desktop, " \
-                  "sorted by CPU usage (descending). Returns an array of " \
-                  "{ pid, command, cpu_percent, memory_percent }."
+    DESCRIPTION = "List up to 100 processes on the operator's connected desktop, " \
+                  "sorted by memory usage (descending). Returns an array of " \
+                  "{ pid, command, memory_mb, cpu_time }. " \
+                  "`cpu_time` is total CPU time consumed since process start " \
+                  "(formatted as HH:MM:SS.fffffff); the platform does not " \
+                  "expose instantaneous CPU% via this API."
     HUMAN_LABEL = "List processes"
 
     TOP_N = 100
@@ -35,12 +38,27 @@ module AiTools
     end
 
     def parse_response(response)
-      processes = response.dig(:result, :processes) || []
-      # Stable sort by cpu_percent descending; preserve original order for
+      # The desktop returns the process list as a raw array under `result`
+      # (List<ProcessInfo> serialised directly), NOT a hash wrapper. Its
+      # field names are C# PascalCase: Pid, Name, MemoryMB, CpuTime,
+      # StartTime. Normalise to the snake_case shape the LLM expects.
+      raw = response[:result]
+      return { processes: [] } unless raw.is_a?(Array)
+
+      normalised = raw.map do |proc_info|
+        {
+          pid:       proc_info[:Pid],
+          command:   proc_info[:Name],
+          memory_mb: proc_info[:MemoryMB],
+          cpu_time:  proc_info[:CpuTime]
+        }
+      end
+
+      # Stable sort by memory_mb descending; preserve original order for
       # ties via the index tiebreaker. Take TOP_N (TOOL-02 cap).
-      ranked = processes
+      ranked = normalised
                .each_with_index
-               .sort_by { |proc_info, idx| [-(proc_info[:cpu_percent] || 0).to_f, idx] }
+               .sort_by { |proc_info, idx| [-(proc_info[:memory_mb] || 0).to_i, idx] }
                .map { |proc_info, _idx| proc_info }
                .first(TOP_N)
       { processes: ranked }

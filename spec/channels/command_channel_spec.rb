@@ -134,9 +134,11 @@ RSpec.describe CommandChannel, type: :channel do
       it 'routes responses whose id is in CommandBridge.has_pending? through deliver and skips the user broadcast' do
         subscribe
         allow(CommandBridge).to receive(:has_pending?).and_return(true)
+        # build_response_payload deep-symbolises result keys so AI tool
+        # parse_response methods can dig with symbols.
         expect(CommandBridge).to receive(:deliver).with(
           tool_id,
-          hash_including(id: tool_id, status: 'ok', result: { 'stdout' => 'hi' })
+          hash_including(id: tool_id, status: 'ok', result: { stdout: 'hi' })
         )
         expect(ActionCable.server).not_to receive(:broadcast)
 

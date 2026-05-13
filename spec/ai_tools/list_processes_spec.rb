@@ -29,8 +29,14 @@ RSpec.describe AiTools::ListProcesses do
   end
 
   describe "#call" do
-    let(:processes_150) do
-      150.times.map { |i| { pid: i, command: "p#{i}", cpu_percent: 150 - i, memory_percent: 1.0 } }
+    # Wire shape from the desktop after CommandChannel#build_response_payload
+    # deep-symbolises the JSON-parsed body. Field names are C# PascalCase
+    # ({Pid, Name, MemoryMB, CpuTime, StartTime}) because the desktop's
+    # ProcessInfo DTO serialises that way. parse_response renames them.
+    let(:desktop_processes_150) do
+      150.times.map do |i|
+        { Pid: i, Name: "p#{i}", MemoryMB: 150 - i, CpuTime: "00:00:0#{i % 10}", StartTime: nil }
+      end
     end
 
     it "dispatches terminal.listProcesses with empty payload (TOOL-08)" do
@@ -38,33 +44,34 @@ RSpec.describe AiTools::ListProcesses do
         device: device,
         payload: { command: "terminal.listProcesses", payload: {} },
         tool_call_id: anything
-      ).and_return({ id: "x", status: "ok", result: { processes: processes_150 } })
+      ).and_return({ id: "x", status: "ok", result: desktop_processes_150 })
 
       out = tool.call({})
       expect(out[:processes].length).to eq(100)
-      expect(out[:processes].first[:cpu_percent]).to eq(150)  # highest first
-      expect(out[:processes].last[:cpu_percent]).to eq(51)    # 150 - 99
+      expect(out[:processes].first[:memory_mb]).to eq(150) # highest memory_mb first
+      expect(out[:processes].last[:memory_mb]).to eq(51)   # 150 - 99
+      expect(out[:processes].first).to include(:pid, :command, :memory_mb, :cpu_time)
     end
 
     it "returns all processes when fewer than TOP_N" do
       allow(CommandBridge).to receive(:dispatch).and_return(
-        { id: "x", status: "ok", result: { processes: processes_150.first(20) } }
+        { id: "x", status: "ok", result: desktop_processes_150.first(20) }
       )
       expect(tool.call({})[:processes].length).to eq(20)
     end
 
-    it "returns empty array when desktop response has no :processes key" do
-      allow(CommandBridge).to receive(:dispatch).and_return({ id: "x", status: "ok", result: {} })
+    it "returns empty array when desktop response has no array result" do
+      allow(CommandBridge).to receive(:dispatch).and_return({ id: "x", status: "ok", result: nil })
       expect(tool.call({})).to eq({ processes: [] })
     end
 
-    it "preserves original order for processes with equal cpu_percent (stable sort)" do
+    it "preserves original order for processes with equal memory_mb (stable sort)" do
       tied = [
-        { pid: 1, command: "a", cpu_percent: 10.0, memory_percent: 1.0 },
-        { pid: 2, command: "b", cpu_percent: 10.0, memory_percent: 1.0 },
-        { pid: 3, command: "c", cpu_percent: 10.0, memory_percent: 1.0 }
+        { Pid: 1, Name: "a", MemoryMB: 10, CpuTime: "00:00:00", StartTime: nil },
+        { Pid: 2, Name: "b", MemoryMB: 10, CpuTime: "00:00:00", StartTime: nil },
+        { Pid: 3, Name: "c", MemoryMB: 10, CpuTime: "00:00:00", StartTime: nil }
       ]
-      allow(CommandBridge).to receive(:dispatch).and_return({ id: "x", status: "ok", result: { processes: tied } })
+      allow(CommandBridge).to receive(:dispatch).and_return({ id: "x", status: "ok", result: tied })
       pids = tool.call({})[:processes].map { |p| p[:pid] }
       expect(pids).to eq([1, 2, 3])
     end
