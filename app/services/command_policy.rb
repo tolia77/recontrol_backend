@@ -107,10 +107,11 @@ module CommandPolicy
       return Verdict.new(decision: :deny, reason: :metacharacter, resolved_binary: nil) if METACHARACTERS.any? { |m| str.include?(m) }
     end
 
-    # Desktop clients report platform_name as `"Linux"` / `"Windows"` (capital);
-    # BINARY_PATHS keys are lowercase. Normalise here so the lookup matches
-    # regardless of how the device row was registered.
-    platform = device.platform_name.to_s.downcase
+    # Canonical platform_name is lowercase (`"linux"` / `"windows"`). Desktop
+    # clients send the lowercase form via `*SystemInfoService.GetPlatformName`;
+    # device rows are kept in that form via the auth controller's update. Any
+    # other casing is a bug at the source and rejected here.
+    platform = device.platform_name.to_s
     pathmap = BINARY_PATHS[platform] || {}
 
     if binary.include?("/") || binary.include?("\\")

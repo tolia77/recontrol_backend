@@ -7,28 +7,22 @@ RSpec.describe CommandPolicy do
   let(:windows_device) { instance_double("Device", platform_name: "windows") }
   let(:macos_device)   { instance_double("Device", platform_name: "macos") }
 
-  describe ".evaluate -- platform_name is case-insensitive" do
-    # Regression: desktop clients report `Linux` / `Windows` (capital) via
-    # LinuxSystemInfoService.GetPlatformName / WindowsSystemInfoService;
-    # BINARY_PATHS is keyed lowercase. Pre-fix, every binary resolved to
-    # `unknown_binary` in production because the pathmap lookup missed.
-    it "resolves `Linux` (capital L) to the linux pathmap" do
+  describe ".evaluate -- platform_name is enforced lowercase canonical" do
+    # Canonical form is `linux` / `windows`. Desktop clients send lowercase
+    # via `LinuxSystemInfoService.GetPlatformName` / `WindowsSystemInfoService`;
+    # the auth controller persists exactly what the client sends. Anything
+    # capitalised reaches the unknown_binary gate and is hard-denied — that
+    # is intentional: a mis-cased platform name is a bug at the source, not
+    # something this layer should paper over.
+    it "hard-denies `free` when device.platform_name is `Linux` (capital L)" do
       capital_linux = instance_double("Device", platform_name: "Linux")
       v = described_class.evaluate(binary: "free", args: ["-h"], cwd: "/tmp", device: capital_linux)
-      expect(v.decision).to eq(:allow)
-      expect(v.reason).to eq(:allowlisted)
-      expect(v.resolved_binary).to eq("/usr/bin/free")
-    end
-
-    it "resolves `Windows` (capital W) to the windows pathmap" do
-      capital_win = instance_double("Device", platform_name: "Windows")
-      v = described_class.evaluate(binary: "whoami", args: [], cwd: "C:\\", device: capital_win)
-      expect(v.decision).not_to eq(:deny)
-      expect(v.resolved_binary).to eq('C:\\Windows\\System32\\whoami.exe')
+      expect(v.decision).to eq(:deny)
+      expect(v.reason).to eq(:unknown_binary)
     end
   end
 
-  describe ".evaluate -- SAFETY-01 allow-list on Linux" do
+describe ".evaluate -- SAFETY-01 allow-list on Linux" do
     %w[ls cat grep ps df du head tail wc find stat file which env pwd whoami id uname uptime free top].each do |bin|
       it "allows #{bin}" do
         v = described_class.evaluate(binary: bin, args: [], cwd: "/", device: linux_device)
