@@ -34,10 +34,10 @@ RSpec.describe AiTools::KillProcess do
       allow(tool).to receive(:await_confirmation).and_return(:proceed)
     end
 
-    it "dispatches process.kill with integer pid (TOOL-08)" do
+    it "dispatches terminal.killProcess with integer pid (TOOL-08)" do
       expect(CommandBridge).to receive(:dispatch).with(
         device: device,
-        payload: { command: "process.kill", payload: { pid: 1234 } },
+        payload: { command: "terminal.killProcess", payload: { pid: 1234 } },
         tool_call_id: anything
       ).and_return({ id: "x", status: "ok", result: { killed: true } })
 

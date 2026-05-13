@@ -33,10 +33,10 @@ RSpec.describe AiTools::ListProcesses do
       150.times.map { |i| { pid: i, command: "p#{i}", cpu_percent: 150 - i, memory_percent: 1.0 } }
     end
 
-    it "dispatches process.list with empty payload (TOOL-08)" do
+    it "dispatches terminal.listProcesses with empty payload (TOOL-08)" do
       expect(CommandBridge).to receive(:dispatch).with(
         device: device,
-        payload: { command: "process.list", payload: {} },
+        payload: { command: "terminal.listProcesses", payload: {} },
         tool_call_id: anything
       ).and_return({ id: "x", status: "ok", result: { processes: processes_150 } })
 

@@ -3,7 +3,7 @@
 module AiTools
   # TOOL-02: list the top 100 processes on the operator's connected desktop,
   # sorted by CPU usage descending. Wire payload maps to the existing
-  # `process.list` desktop command (TOOL-08); top-100 cap is enforced
+  # `terminal.listProcesses` desktop command (TOOL-08); top-100 cap is enforced
   # server-side in `parse_response` regardless of how many processes the
   # desktop sends back.
   class ListProcesses < Base
@@ -31,7 +31,7 @@ module AiTools
     end
 
     def build_payload(_args)
-      { command: "process.list", payload: {} }
+      { command: "terminal.listProcesses", payload: {} }
     end
 
     def parse_response(response)

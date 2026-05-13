@@ -2,7 +2,7 @@
 
 module AiTools
   # TOOL-03: terminate a process by integer PID. Wire payload maps to the
-  # existing `process.kill` desktop command (TOOL-08). Per RF-4 / D-10,
+  # existing `terminal.killProcess` desktop command (TOOL-08). Per RF-4 / D-10,
   # `Dry::Schema.JSON` (not `.Params`) is used so a string `"1234"` from a
   # confused LLM is REJECTED as invalid_arguments rather than silently
   # coerced to integer 1234 -- which would defeat the type contract that
@@ -33,7 +33,7 @@ module AiTools
     end
 
     def build_payload(args)
-      { command: "process.kill", payload: { pid: args[:pid] } }
+      { command: "terminal.killProcess", payload: { pid: args[:pid] } }
     end
 
     def parse_response(response)
