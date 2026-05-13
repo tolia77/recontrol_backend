@@ -123,12 +123,14 @@ class OpenRouterClient
       stream:   true
     }
 
-    @conn.post("/chat/completions") do |req|
+    raw_capture = +""  # diagnostic buffer for empty-stream forensics
+    response = @conn.post("/chat/completions") do |req|
       req.headers["Authorization"] = "Bearer #{@api_key}"
       req.headers["Content-Type"]  = "application/json"
       req.headers["Accept"]        = "text/event-stream"
       req.body                     = body.to_json
       req.options.on_data          = proc do |chunk, _bytes, _env|
+        raw_capture << chunk if raw_capture.bytesize < 2_000
         parser.feed(chunk) do |_type, data, _id, _retry|
           next if data.nil? || data.empty?
           next if data == "[DONE]"
@@ -177,7 +179,12 @@ class OpenRouterClient
     # never a legitimate "completed" turn. Surface it as a network error so
     # AgentRunner emits `error` instead of a misleading `done(:completed)`.
     if finish_reason.nil? && accumulated_text.empty? && tool_calls_buffer.empty?
-      Rails.logger.warn "[OpenRouter] empty stream (no chunks parsed)"
+      ct = response&.headers&.[]("content-type")
+      Rails.logger.warn "[OpenRouter] empty stream " \
+                        "http_status=#{response&.status} " \
+                        "content_type=#{ct.inspect} " \
+                        "raw_bytes=#{raw_capture.bytesize} " \
+                        "raw_preview=#{raw_capture.byteslice(0, 800).inspect}"
       raise NetworkError, "openrouter returned empty stream"
     end
 
