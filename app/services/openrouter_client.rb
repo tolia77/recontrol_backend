@@ -173,17 +173,32 @@ class OpenRouterClient
       end
     end
 
+    # Defensive: a successful HTTP response that yielded zero SSE events is
+    # never a legitimate "completed" turn. Surface it as a network error so
+    # AgentRunner emits `error` instead of a misleading `done(:completed)`.
+    if finish_reason.nil? && accumulated_text.empty? && tool_calls_buffer.empty?
+      Rails.logger.warn "[OpenRouter] empty stream (no chunks parsed)"
+      raise NetworkError, "openrouter returned empty stream"
+    end
+
     [finish_reason, build_assistant_message(accumulated_text, tool_calls_buffer), captured_usage]
   rescue Faraday::TimeoutError, Faraday::ConnectionFailed => e
     Rails.logger.warn "[OpenRouter] network failure: #{e.class}"
     raise NetworkError, e.class.name
   rescue Faraday::ClientError => e
-    if e.respond_to?(:response_status) && e.response_status == 429
-      Rails.logger.warn "[OpenRouter] rate limited"
+    status = e.respond_to?(:response_status) ? e.response_status : nil
+    body   = e.respond_to?(:response_body) ? e.response_body.to_s[0, 500] : nil
+    if status == 429
+      Rails.logger.warn "[OpenRouter] rate limited body=#{body}"
       raise RateLimitError, "rate_limited"
     end
-    Rails.logger.warn "[OpenRouter] client error: #{e.class}"
-    raise NetworkError, e.class.name
+    Rails.logger.warn "[OpenRouter] client error status=#{status} body=#{body}"
+    raise NetworkError, "openrouter http #{status}"
+  rescue Faraday::ServerError => e
+    status = e.respond_to?(:response_status) ? e.response_status : nil
+    body   = e.respond_to?(:response_body) ? e.response_body.to_s[0, 500] : nil
+    Rails.logger.warn "[OpenRouter] server error status=#{status} body=#{body}"
+    raise NetworkError, "openrouter http #{status}"
   end
 
   private
@@ -192,6 +207,11 @@ class OpenRouterClient
     Faraday.new(url: BASE_URL) do |f|
       f.options.open_timeout = OPEN_TIMEOUT_S
       f.options.timeout      = READ_TIMEOUT_S
+      # Surface 4xx/5xx as Faraday::ClientError / Faraday::ServerError so the
+      # rescue chain in stream_chat_completion sees them instead of silently
+      # treating the non-SSE error body as an empty stream (which previously
+      # caused AgentRunner to broadcast `done(:completed)` with 0 tokens).
+      f.response :raise_error
       f.adapter Faraday.default_adapter
     end
   end

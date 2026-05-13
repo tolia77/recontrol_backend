@@ -124,16 +124,20 @@ RSpec.describe OpenRouterClient do
 
     it "treats `data: [DONE]` as end-of-stream without invoking JSON.parse on the literal" do
       # If [DONE] reached JSON.parse, we'd get a JSON::ParserError. The fixture
-      # below has zero data lines but a [DONE] terminator. The token block
-      # must not yield.
+      # below has zero data lines but a [DONE] terminator. After parsing the
+      # token block must not yield AND the defensive empty-stream guard must
+      # raise NetworkError (a real `[DONE]`-only response from OpenRouter is
+      # not a legitimate "completed" turn — it means the upstream model
+      # produced no tokens, which should surface as an error to the operator
+      # rather than a misleading `done(:completed)` broadcast).
       drive_stream(OpenRouterStub.done_line)
       yielded = []
-      finish_reason, msg = client.stream_chat_completion(messages: messages, tools: tools) do |type, t|
-        yielded << [type, t]
-      end
+      expect {
+        client.stream_chat_completion(messages: messages, tools: tools) do |type, t|
+          yielded << [type, t]
+        end
+      }.to raise_error(described_class::NetworkError, /empty stream/)
       expect(yielded).to be_empty
-      expect(msg["content"]).to eq("")
-      expect(finish_reason).to be_nil
     end
 
     it "ignores `: OPENROUTER PROCESSING` heartbeat comment lines between data events" do
