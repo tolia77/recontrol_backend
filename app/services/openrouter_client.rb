@@ -66,7 +66,11 @@ class OpenRouterClient
     Respond in the same language as the user's last message.
   SYSTEM
 
-  BASE_URL          = "https://openrouter.ai/api/v1"
+  # Trailing slash is REQUIRED so that the relative POST path below is appended,
+  # not resolved as host-absolute (RFC 3986). Without it, `/chat/completions`
+  # gets resolved against the host root and we end up hitting the marketing
+  # page at https://openrouter.ai/chat/completions (200 OK + HTML).
+  BASE_URL          = "https://openrouter.ai/api/v1/"
   OPEN_TIMEOUT_S    = 10
   READ_TIMEOUT_S    = 120  # MUST be >= AgentRunner's WALL_CLOCK_SECONDS so the SSE
                            # read does not abort earlier than the loop-level cap.
@@ -124,7 +128,8 @@ class OpenRouterClient
     }
 
     raw_capture = +""  # diagnostic buffer for empty-stream forensics
-    response = @conn.post("/chat/completions") do |req|
+    # Path is relative (NO leading slash) so it joins onto BASE_URL's path.
+    response = @conn.post("chat/completions") do |req|
       req.headers["Authorization"] = "Bearer #{@api_key}"
       req.headers["Content-Type"]  = "application/json"
       req.headers["Accept"]        = "text/event-stream"

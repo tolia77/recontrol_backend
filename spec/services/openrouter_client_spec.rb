@@ -29,6 +29,16 @@ RSpec.describe OpenRouterClient do
       expect(described_class::NetworkError.ancestors).to include(described_class::OpenRouterError)
       expect(described_class::RateLimitError.ancestors).to include(described_class::OpenRouterError)
     end
+
+    it "BASE_URL ends with a trailing slash so relative POST paths join (RFC 3986)" do
+      # Without the trailing slash, `chat/completions` would resolve to
+      # https://openrouter.ai/chat/completions (the marketing page) instead of
+      # https://openrouter.ai/api/v1/chat/completions (the API endpoint).
+      expect(described_class::BASE_URL).to end_with("/")
+      expect(URI.join(described_class::BASE_URL, "chat/completions").to_s).to eq(
+        "https://openrouter.ai/api/v1/chat/completions"
+      )
+    end
   end
 
   describe ".api_key" do
