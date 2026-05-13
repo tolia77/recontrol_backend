@@ -24,17 +24,18 @@ module CommandPolicy
     ls ps pwd stat tail top uname uptime wc which whoami
   ].freeze
 
-  # SAFETY-02: explicit deny-list. Members trigger :needs_confirm with
-  # reason :deny_list (operator can override). MUST also be present in
-  # BINARY_PATHS["linux"] so pathmap lookup resolves first.
-  DENY_LIST = %w[
-    chmod chown dd kill mkfs mount mv passwd reboot
-    rm shutdown su sudo useradd usermod
-  ].freeze
-
   # SAFETY-05: shell metacharacters. ANY occurrence in any args[] string OR
   # in the binary name itself is rejected with reason :metacharacter.
   METACHARACTERS = ["|", "&", ";", "$(", "`", "<", ">", "&&", "||"].freeze
+
+  # Standard system bin dirs scanned at request time when a binary is not in
+  # BINARY_PATHS. Resolution turns a hard-deny into an operator-confirm gate
+  # (:unverified zone) so the Allow/Deny card actually serves as the documented
+  # escape hatch instead of being a no-op for anything pre-author didn't list.
+  RUNTIME_RESOLVE_DIRS = {
+    "linux"   => %w[/usr/bin /usr/sbin /usr/local/bin /usr/local/sbin /bin /sbin].freeze,
+    "windows" => [].freeze
+  }.freeze
 
   # SAFETY-06 / D-04: per-platform absolute-path map. Backend rejects with
   # reason :unknown_binary if the requested binary is not in the map for
@@ -64,7 +65,11 @@ module CommandPolicy
       "wc"       => "/usr/bin/wc",
       "which"    => "/usr/bin/which",
       "whoami"   => "/usr/bin/whoami",
-      # SAFETY-02 deny-list (operator-confirmable destructive).
+      # Statefully-mutating common tools. They were previously on a separate
+      # DENY_LIST; that classification was dropped because the resulting policy
+      # decision (:needs_confirm) was identical to :outside_list. Keep them in
+      # the pathmap so they resolve under the strict-PATH guarantee instead of
+      # falling through to runtime path resolution.
       "chmod"    => "/usr/bin/chmod",
       "chown"    => "/usr/bin/chown",
       "dd"       => "/usr/bin/dd",
@@ -97,18 +102,24 @@ module CommandPolicy
   # Order of checks (locked; do NOT reorder):
   #   1. Metacharacter rejection (binary or any arg)         → :deny / :metacharacter
   #   2. Path-shadow rejection (slash that is not canonical) → :deny / :path_shadow
-  #   3. Pathmap lookup (per device.platform_name)           → :deny / :unknown_binary
-  #   4. Deny-list classification                            → :needs_confirm / :deny_list
-  #   5. Allow-list classification                           → :allow / :allowlisted
-  #   6. Otherwise (default-deny middle zone)                → :needs_confirm / :outside_list
+  #   3. Pathmap lookup (per device.platform_name):
+  #        hit + on ALLOW_LIST (linux)                       → :allow / :allowlisted
+  #        hit + NOT on allow-list                           → :needs_confirm / :outside_list
+  #        miss → runtime resolve under standard bin dirs    → :needs_confirm / :unverified
+  #        miss + no runtime resolution                      → :deny / :unknown_binary
+  #
+  # The previous DENY_LIST was collapsed into :outside_list because the policy
+  # decision was identical (:needs_confirm); the frontend differentiation is
+  # now carried by `reason` (:outside_list vs :unverified), not by a separate
+  # static classification.
   def evaluate(binary:, args:, cwd:, device:)
     [binary, *Array(args)].each do |str|
       next unless str.is_a?(String)
       return Verdict.new(decision: :deny, reason: :metacharacter, resolved_binary: nil) if METACHARACTERS.any? { |m| str.include?(m) }
     end
 
-    # Canonical platform_name is lowercase (`"linux"` / `"windows"`). Desktop
-    # clients send the lowercase form via `*SystemInfoService.GetPlatformName`;
+    # Canonical platform_name is lowercase ("linux" / "windows"). Desktop
+    # clients send the lowercase form via *SystemInfoService.GetPlatformName;
     # device rows are kept in that form via the auth controller's update. Any
     # other casing is a bug at the source and rejected here.
     platform = device.platform_name.to_s
@@ -123,14 +134,36 @@ module CommandPolicy
     end
 
     resolved = pathmap[bare_name]
-    return Verdict.new(decision: :deny, reason: :unknown_binary, resolved_binary: nil) if resolved.nil?
+    if resolved
+      linux_platform = platform == "linux"
+      return Verdict.new(decision: :allow, reason: :allowlisted, resolved_binary: resolved) if linux_platform && ALLOW_LIST.include?(bare_name)
+      return Verdict.new(decision: :needs_confirm, reason: :outside_list, resolved_binary: resolved)
+    end
 
-    return Verdict.new(decision: :needs_confirm, reason: :deny_list, resolved_binary: resolved) if DENY_LIST.include?(bare_name)
+    # Pathmap miss: try to resolve at runtime by scanning standard system bin
+    # dirs. This converts the historical "hard-deny on anything unanticipated"
+    # behaviour into operator-confirm — the documented Allow/Deny escape hatch
+    # now actually fires for unknown binaries instead of silently failing.
+    runtime_path = runtime_resolve(bare_name, platform)
+    return Verdict.new(decision: :needs_confirm, reason: :unverified, resolved_binary: runtime_path) if runtime_path
 
-    linux_platform = platform == "linux"
-    return Verdict.new(decision: :allow, reason: :allowlisted, resolved_binary: resolved) if linux_platform && ALLOW_LIST.include?(bare_name)
+    Verdict.new(decision: :deny, reason: :unknown_binary, resolved_binary: nil)
+  end
 
-    Verdict.new(decision: :needs_confirm, reason: :outside_list, resolved_binary: resolved)
+  # Scans RUNTIME_RESOLVE_DIRS for the bare binary name. Returns the absolute
+  # path if found and executable, or nil otherwise. File.executable? rejects
+  # directories and symlinks-to-nothing, so the returned path is safe to pass
+  # to Process.Start downstream.
+  def runtime_resolve(bare_name, platform)
+    return nil if bare_name.nil? || bare_name.empty?
+    return nil if bare_name.include?("/") || bare_name.include?("\\")
+
+    dirs = RUNTIME_RESOLVE_DIRS[platform] || []
+    dirs.each do |dir|
+      candidate = File.join(dir, bare_name)
+      return candidate if File.executable?(candidate) && !File.directory?(candidate)
+    end
+    nil
   end
 
   # Boot-time fail-closed forensics check. Logs missing paths; does NOT raise.

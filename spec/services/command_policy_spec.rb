@@ -33,14 +33,35 @@ describe ".evaluate -- SAFETY-01 allow-list on Linux" do
     end
   end
 
-  describe ".evaluate -- SAFETY-02 deny-list on Linux (needs_confirm not unknown_binary)" do
+  describe ".evaluate -- known-but-not-allow-listed binaries on Linux (needs_confirm via outside_list)" do
+    # Previously SAFETY-02 split these out as a separate :deny_list zone, but
+    # the policy decision was identical to :outside_list. Both collapse here.
     %w[rm mv dd mkfs mount shutdown reboot kill sudo su chmod chown passwd useradd usermod].each do |bin|
-      it "needs_confirm for #{bin}" do
+      it "needs_confirm via outside_list for #{bin}" do
         v = described_class.evaluate(binary: bin, args: [], cwd: "/", device: linux_device)
         expect(v.decision).to eq(:needs_confirm)
-        expect(v.reason).to eq(:deny_list)
+        expect(v.reason).to eq(:outside_list)
         expect(v.resolved_binary).to eq("/usr/bin/#{bin}")
       end
+    end
+  end
+
+  describe ".evaluate -- unknown binary resolved at runtime (needs_confirm via unverified)" do
+    # Before this change, anything not in BINARY_PATHS was hard-denied with
+    # :unknown_binary. Now we scan standard system bin dirs and let the
+    # operator confirm via Allow/Deny.
+    it "resolves /usr/bin/setxkbmap and routes through :unverified when present on the host" do
+      skip "setxkbmap not installed on this host" unless File.executable?("/usr/bin/setxkbmap")
+      v = described_class.evaluate(binary: "setxkbmap", args: ["-layout", "ua"], cwd: "/", device: linux_device)
+      expect(v.decision).to eq(:needs_confirm)
+      expect(v.reason).to eq(:unverified)
+      expect(v.resolved_binary).to eq("/usr/bin/setxkbmap")
+    end
+
+    it "still hard-denies as :unknown_binary when neither pathmap nor runtime scan resolves" do
+      v = described_class.evaluate(binary: "totally-not-a-real-binary-xyz", args: [], cwd: "/", device: linux_device)
+      expect(v.decision).to eq(:deny)
+      expect(v.reason).to eq(:unknown_binary)
     end
   end
 

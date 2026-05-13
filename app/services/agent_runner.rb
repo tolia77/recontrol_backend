@@ -66,11 +66,19 @@ class AgentRunner
 
     @terminated     = false  # STREAM-06; flipped by broadcast_done / broadcast_error
 
-    platform       = @device.platform_name.to_s
-    allowlist_keys = (CommandPolicy::BINARY_PATHS[platform] || {})
-      .keys
-      .reject { |k| CommandPolicy::DENY_LIST.include?(k) }
-      .sort
+    # System-prompt allow-list hint. The policy's silent-allow set is Linux-
+    # only (CommandPolicy gates the allow-list check on linux_platform); on
+    # Windows every recognised binary needs operator confirmation. So:
+    #   - linux:   ALLOW_LIST ∩ pathmap   (what runs without prompting)
+    #   - windows: pathmap.keys           (informational; all confirm-gated)
+    platform = @device.platform_name.to_s
+    pathmap  = CommandPolicy::BINARY_PATHS[platform] || {}
+    allowlist_keys =
+      if platform == "linux"
+        (CommandPolicy::ALLOW_LIST & pathmap.keys).sort
+      else
+        pathmap.keys.sort
+      end
     platform_label = platform.presence || "unknown"
     allowlist_str  = allowlist_keys.empty? ? "(none)" : allowlist_keys.join(", ")
     system_content = format(OpenRouterClient::SYSTEM_PROMPT_TEMPLATE,
