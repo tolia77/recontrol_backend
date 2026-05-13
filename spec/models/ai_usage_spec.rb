@@ -8,8 +8,8 @@ RSpec.describe AiUsage, type: :model do
   describe "ROLE_LIMITS" do
     it "matches locked role quotas" do
       expect(described_class::ROLE_LIMITS).to eq(
-        "client" => 10_000,
-        "admin" => 50_000
+        "client" => 100_000,
+        "admin" => 100_000
       )
       expect(described_class::ROLE_LIMITS).to be_frozen
     end
@@ -22,13 +22,13 @@ RSpec.describe AiUsage, type: :model do
     end
 
     it "raises QuotaExceededError with post-update totals" do
-      described_class.create!(user: user, usage_date: Date.current, tokens_used: 9_900)
+      described_class.create!(user: user, usage_date: Date.current, tokens_used: 99_900)
 
       expect do
         described_class.charge!(user, input_tokens: 200, output_tokens: 0)
       end.to raise_error(AiUsage::QuotaExceededError) { |err|
-        expect(err.tokens_used).to eq(10_100)
-        expect(err.limit).to eq(10_000)
+        expect(err.tokens_used).to eq(100_100)
+        expect(err.limit).to eq(100_000)
       }
     end
 
@@ -65,7 +65,7 @@ RSpec.describe AiUsage, type: :model do
     it "raises only when usage is at or over limit" do
       expect(described_class.refuse_if_exceeded!(user)).to eq(0)
 
-      described_class.where(user: user, usage_date: Date.current).update_all(tokens_used: 10_000)
+      described_class.where(user: user, usage_date: Date.current).update_all(tokens_used: 100_000)
 
       expect do
         described_class.refuse_if_exceeded!(user)
@@ -111,7 +111,7 @@ RSpec.describe AiUsage, type: :model do
       # Per CONTEXT D-09 / D-10: VERIFY-03 extends this existing describe in place.
       # Seed the user near 80% of the client role limit so the race window is at
       # the precise quota boundary the operator would hit in production.
-      described_class.create!(user: user, usage_date: Date.current, tokens_used: 7_500)
+      described_class.create!(user: user, usage_date: Date.current, tokens_used: 79_500)
 
       concurrency_level = 4
       delta_per_call    = 100

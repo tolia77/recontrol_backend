@@ -122,7 +122,7 @@ RSpec.describe "AgentRunner safety and quota integration" do
   end
 
   it "QUOTA-06: emits done(quota) when turn usage crosses hard cap" do
-    AiUsage.create!(user: user, usage_date: Date.current, tokens_used: 9_900)
+    AiUsage.create!(user: user, usage_date: Date.current, tokens_used: 99_900)
     client = instance_double(OpenRouterClient)
     allow(client).to receive(:stream_chat_completion).and_return(
       ["stop", { "role" => "assistant", "content" => "quota breach" }, { "prompt_tokens" => 150, "completion_tokens" => 0, "total_tokens" => 150 }]

@@ -4,8 +4,8 @@ class AiUsage < ApplicationRecord
   belongs_to :user
 
   ROLE_LIMITS = {
-    "client" => 10_000,
-    "admin"  => 50_000
+    "client" => 100_000,
+    "admin"  => 100_000
   }.freeze
 
   class QuotaExceededError < StandardError

@@ -561,7 +561,7 @@ RSpec.describe AgentRunner do
     end
 
     before do
-      AiUsage.create!(user: client_user, usage_date: Date.current, tokens_used: 7_500)
+      AiUsage.create!(user: client_user, usage_date: Date.current, tokens_used: 79_500)
     end
 
     it "emits quota_warning exactly once when crossing 80%" do
@@ -581,7 +581,7 @@ RSpec.describe AgentRunner do
       quota_warns = captured.select { |_, p| p[:type] == "quota_warning" }
       expect(quota_warns.size).to eq(1)
       expect(quota_warns.first[1][:percent]).to eq(80)
-      expect(quota_warns.first[1][:limit]).to eq(10_000)
+      expect(quota_warns.first[1][:limit]).to eq(100_000)
     end
   end
 
@@ -597,7 +597,7 @@ RSpec.describe AgentRunner do
     end
 
     before do
-      AiUsage.create!(user: client_user, usage_date: Date.current, tokens_used: 9_900)
+      AiUsage.create!(user: client_user, usage_date: Date.current, tokens_used: 99_900)
     end
 
     it "broadcasts done(:quota) when AiUsage.charge! raises QuotaExceededError" do
@@ -608,13 +608,13 @@ RSpec.describe AgentRunner do
       make_client_runner.run
       done = captured.reverse.find { |_, p| p[:type] == "done" }
       expect(done[1][:stop_reason]).to eq("quota")
-      expect(done[1][:tokens_used]).to be >= 10_000
-      expect(done[1][:limit]).to eq(10_000)
+      expect(done[1][:tokens_used]).to be >= 100_000
+      expect(done[1][:limit]).to eq(100_000)
     end
 
     it "refuses pre-call when already at limit (QUOTA-04 pre-call check)" do
       AiUsage.where(user: client_user, usage_date: Date.current).delete_all
-      AiUsage.create!(user: client_user, usage_date: Date.current, tokens_used: 10_001)
+      AiUsage.create!(user: client_user, usage_date: Date.current, tokens_used: 100_001)
 
       expect(client).not_to receive(:stream_chat_completion)
       make_client_runner.run
