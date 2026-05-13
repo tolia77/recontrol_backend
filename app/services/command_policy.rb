@@ -107,7 +107,11 @@ module CommandPolicy
       return Verdict.new(decision: :deny, reason: :metacharacter, resolved_binary: nil) if METACHARACTERS.any? { |m| str.include?(m) }
     end
 
-    pathmap = BINARY_PATHS[device.platform_name.to_s] || {}
+    # Desktop clients report platform_name as `"Linux"` / `"Windows"` (capital);
+    # BINARY_PATHS keys are lowercase. Normalise here so the lookup matches
+    # regardless of how the device row was registered.
+    platform = device.platform_name.to_s.downcase
+    pathmap = BINARY_PATHS[platform] || {}
 
     if binary.include?("/") || binary.include?("\\")
       return Verdict.new(decision: :deny, reason: :path_shadow, resolved_binary: nil) unless pathmap.value?(binary)
@@ -122,7 +126,7 @@ module CommandPolicy
 
     return Verdict.new(decision: :needs_confirm, reason: :deny_list, resolved_binary: resolved) if DENY_LIST.include?(bare_name)
 
-    linux_platform = device.platform_name.to_s == "linux"
+    linux_platform = platform == "linux"
     return Verdict.new(decision: :allow, reason: :allowlisted, resolved_binary: resolved) if linux_platform && ALLOW_LIST.include?(bare_name)
 
     Verdict.new(decision: :needs_confirm, reason: :outside_list, resolved_binary: resolved)
