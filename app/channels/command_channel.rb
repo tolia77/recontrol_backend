@@ -99,12 +99,13 @@ class CommandChannel < ApplicationCable::Channel
       return
     end
 
-    # Phase 18: route AgentRunner-correlated tool responses to CommandBridge.deliver
-    # instead of the user broadcast. The CommandBridge consumer (AgentRunner thread)
-    # handles the result; the operator's panel receives a tool_call_result broadcast
-    # via AssistantChannel.broadcast_to(...) from inside AgentRunner.
-    if data["tool_call_id"].present?
-      CommandBridge.deliver(data["tool_call_id"], build_response_payload(data))
+    # Phase 18: AI-tool responses share the desktop response shape with legacy
+    # operator commands -- both deliver `{id, status, result|error}`. Disambiguate
+    # by checking whether the id matches an outstanding AgentRunner dispatch.
+    # If yes, deliver to CommandBridge (AgentRunner thread reads the queue);
+    # otherwise fall through to the normal user broadcast.
+    if CommandBridge.has_pending?(data["id"])
+      CommandBridge.deliver(data["id"], build_response_payload(data))
       return
     end
 

@@ -2,9 +2,14 @@
 
 module AiTools
   # TOOL-01: execute a command on the operator's connected desktop.
-  # Wire-format invariant per TOOL-08: the desktop already implements
-  # `terminal.execute` with `{ binary:, args:, cwd: }` payload keys; this
-  # tool produces exactly that shape so no desktop-side change is needed.
+  # Dispatches `terminal.runCommand` -- the one-shot execve path that uses
+  # Process.Start with discrete args (no shell parsing). Distinct from
+  # `terminal.execute` which runs through a persistent /bin/bash session and
+  # streams output as separate frames; that streaming-shell semantics is
+  # wrong for AI tool calls, which need a single response keyed by the
+  # request id. The discrete-args contract also preserves CommandPolicy's
+  # metacharacter rejection (a shell intermediary would re-parse and
+  # re-introduce the ambiguity the policy is designed to eliminate).
   class RunCommand < Base
     NAME        = "run_command"
     DESCRIPTION = "Execute a command on the operator's connected desktop. " \
@@ -28,7 +33,7 @@ module AiTools
 
     def build_payload(args)
       {
-        command: "terminal.execute",
+        command: "terminal.runCommand",
         payload: {
           binary: args[:binary],
           args:   args[:args],

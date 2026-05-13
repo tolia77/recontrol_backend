@@ -17,8 +17,13 @@ RSpec.describe CommandBridge do
   end
 
   describe ".dispatch" do
-    it "broadcasts to device_<id> with the payload merged with tool_call_id, then waits on Queue#pop" do
-      expected_payload = payload.merge(tool_call_id: tool_call_id)
+    it "broadcasts to device_<id> with the payload merged with id (using tool_call_id as the value), then waits on Queue#pop" do
+      # The desktop wire collapses to a single `id` correlation field -- the
+      # tool_call_id value gets merged in under that key. The backend-internal
+      # variable name `tool_call_id` is retained for clarity in code paths
+      # that need to distinguish it from the OpenRouter-emitted tool_call_id
+      # that flows to the frontend transcript.
+      expected_payload = payload.merge(id: tool_call_id)
       expect(ActionCable.server).to receive(:broadcast).with("device_#{device.id}", expected_payload)
 
       # Deliver via a background thread so dispatch unblocks
@@ -75,6 +80,21 @@ RSpec.describe CommandBridge do
     it "is a silent no-op (with warn-log) when the id is not registered (D-09 late response)" do
       expect(Rails.logger).to receive(:warn).with(/\[CommandBridge\] late response for #{tool_call_id}/)
       expect { described_class.deliver(tool_call_id, { result: 1 }) }.not_to raise_error
+    end
+  end
+
+  describe ".has_pending?" do
+    it "is true while an id is registered, false otherwise" do
+      expect(described_class.has_pending?(tool_call_id)).to be(false)
+      AgentToolCallRegistry.register(tool_call_id)
+      expect(described_class.has_pending?(tool_call_id)).to be(true)
+      AgentToolCallRegistry.delete(tool_call_id)
+      expect(described_class.has_pending?(tool_call_id)).to be(false)
+    end
+
+    it "is false for nil and empty string" do
+      expect(described_class.has_pending?(nil)).to be(false)
+      expect(described_class.has_pending?("")).to be(false)
     end
   end
 end

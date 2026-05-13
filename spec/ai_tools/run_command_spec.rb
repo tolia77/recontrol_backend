@@ -45,11 +45,11 @@ RSpec.describe AiTools::RunCommand do
       }
     end
 
-    it "dispatches a terminal.execute payload with binary/args/cwd (TOOL-08)" do
+    it "dispatches a terminal.runCommand payload with binary/args/cwd (TOOL-08)" do
       expect(CommandBridge).to receive(:dispatch).with(
         device: device,
         payload: {
-          command: "terminal.execute",
+          command: "terminal.runCommand",
           payload: { binary: "ls", args: ["-la", "/tmp"], cwd: "/home/user" }
         },
         tool_call_id: anything

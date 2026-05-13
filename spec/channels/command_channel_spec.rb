@@ -125,28 +125,32 @@ RSpec.describe CommandChannel, type: :channel do
       perform :receive, data
     end
 
-    describe '#handle_desktop_message tool_call_id routing' do
-      let(:tool_call_id) { SecureRandom.uuid }
+    describe '#handle_desktop_message AI-tool routing via CommandBridge' do
+      # Desktop wire collapses to a single `id` field. CommandChannel routes a
+      # response to CommandBridge.deliver iff that id is in the pending-call
+      # registry; otherwise it broadcasts to the operator like any other reply.
+      let(:tool_id) { SecureRandom.uuid }
 
-      it 'routes responses bearing tool_call_id through CommandBridge.deliver and skips the user broadcast' do
+      it 'routes responses whose id is in CommandBridge.has_pending? through deliver and skips the user broadcast' do
         subscribe
+        allow(CommandBridge).to receive(:has_pending?).and_return(true)
         expect(CommandBridge).to receive(:deliver).with(
-          tool_call_id,
-          hash_including(id: 'web-msg-1', status: 'ok', result: { 'stdout' => 'hi' })
+          tool_id,
+          hash_including(id: tool_id, status: 'ok', result: { 'stdout' => 'hi' })
         )
         expect(ActionCable.server).not_to receive(:broadcast)
 
         perform :receive, {
-          'tool_call_id' => tool_call_id,
-          'command'      => 'terminal.execute',
-          'id'           => 'web-msg-1',
-          'status'       => 'ok',
-          'result'       => { 'stdout' => 'hi' }
+          'command' => 'terminal.runCommand',
+          'id'      => tool_id,
+          'status'  => 'ok',
+          'result'  => { 'stdout' => 'hi' }
         }
       end
 
       it 'forwards plain (non-tool) command responses to broadcast_to_user as before (regression guard)' do
         subscribe
+        allow(CommandBridge).to receive(:has_pending?).and_return(false)
         expect(CommandBridge).not_to receive(:deliver)
         expect(ActionCable.server).to receive(:broadcast).with(
           "user_#{owner.id}_to_#{device.id}",
@@ -160,10 +164,10 @@ RSpec.describe CommandChannel, type: :channel do
         }
       end
 
-      it 'does not route heartbeats through CommandBridge even if a tool_call_id field is somehow present' do
+      it 'does not route heartbeats through CommandBridge' do
         subscribe
         expect(CommandBridge).not_to receive(:deliver)
-        perform :receive, { 'command' => 'heartbeat', 'tool_call_id' => 'should-not-route' }
+        perform :receive, { 'command' => 'heartbeat' }
       end
     end
   end
