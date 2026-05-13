@@ -12,21 +12,21 @@ RSpec.describe AiSessionsSweeperJob, type: :job do
       device: device,
       started_at: 2.minutes.ago,
       ended_at: nil,
-      model: "anthropic/claude-3.5-sonnet"
+      model: "anthropic/claude-sonnet-4.6"
     )
     stale_open = AiSession.create!(
       user: user,
       device: device,
       started_at: 10.minutes.ago,
       ended_at: nil,
-      model: "anthropic/claude-3.5-sonnet"
+      model: "anthropic/claude-sonnet-4.6"
     )
     closed = AiSession.create!(
       user: user,
       device: device,
       started_at: 10.minutes.ago,
       ended_at: 1.minute.ago,
-      model: "anthropic/claude-3.5-sonnet",
+      model: "anthropic/claude-sonnet-4.6",
       stop_reason: "completed"
     )
 

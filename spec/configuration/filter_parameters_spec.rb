@@ -28,7 +28,7 @@ RSpec.describe "Rails.application.config.filter_parameters" do
 
   it "still passes through non-sensitive params" do
     pf = ActiveSupport::ParameterFilter.new(filters)
-    out = pf.filter("device_id" => "uuid-123", "model" => "claude-3.5-sonnet")
-    expect(out).to eq("device_id" => "uuid-123", "model" => "claude-3.5-sonnet")
+    out = pf.filter("device_id" => "uuid-123", "model" => "claude-sonnet-4.6")
+    expect(out).to eq("device_id" => "uuid-123", "model" => "claude-sonnet-4.6")
   end
 end

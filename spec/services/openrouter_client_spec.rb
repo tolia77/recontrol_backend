@@ -6,13 +6,13 @@ require_relative "../support/openrouter_stub"
 
 RSpec.describe OpenRouterClient do
   let(:api_key) { "sk-or-test-1234567890abcdef" }
-  let(:client)  { described_class.new(api_key: api_key, model: "anthropic/claude-3.5-sonnet") }
+  let(:client)  { described_class.new(api_key: api_key, model: "anthropic/claude-sonnet-4.6") }
 
   describe "constants" do
     it "defines DEFAULT_MODEL, ALLOWED_MODELS, SYSTEM_PROMPT_TEMPLATE" do
       expect(described_class::DEFAULT_MODEL).to be_a(String)
       expect(described_class::ALLOWED_MODELS).to be_an(Array).and(be_frozen)
-      expect(described_class::ALLOWED_MODELS).to include("anthropic/claude-3.5-sonnet")
+      expect(described_class::ALLOWED_MODELS).to include("anthropic/claude-sonnet-4.6")
       expect(described_class::SYSTEM_PROMPT_TEMPLATE).to include(
         "operator-side assistant",
         "UNTRUSTED external data",

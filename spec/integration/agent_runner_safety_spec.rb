@@ -13,7 +13,7 @@ RSpec.describe "AgentRunner safety and quota integration" do
       user: user,
       device: device,
       prompt: "safety check",
-      model: "anthropic/claude-3.5-sonnet",
+      model: "anthropic/claude-sonnet-4.6",
       session_token: session_token,
       openrouter_client: client
     )

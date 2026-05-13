@@ -104,7 +104,7 @@ RSpec.describe "Assistant pipeline (Phase 18)" do
           end
         end
 
-        perform :run_prompt, { "prompt" => "list /tmp", "model" => "anthropic/claude-3.5-sonnet" }
+        perform :run_prompt, { "prompt" => "list /tmp", "model" => "anthropic/claude-sonnet-4.6" }
         join_runner_thread
 
         types = captured.map { |_, p| p[:type] }
@@ -131,7 +131,7 @@ RSpec.describe "Assistant pipeline (Phase 18)" do
           ["stop", { "role" => "assistant", "content" => "hi" }]
         end
 
-        perform :run_prompt, { "prompt" => "x", "model" => "anthropic/claude-3.5-sonnet" }
+        perform :run_prompt, { "prompt" => "x", "model" => "anthropic/claude-sonnet-4.6" }
         join_runner_thread
 
         seqs   = captured.map { |_, p| p[:seq] }
@@ -163,7 +163,7 @@ RSpec.describe "Assistant pipeline (Phase 18)" do
           block&.call(:token, "hello")
           ["stop", { "role" => "assistant", "content" => "hello" }]
         end
-        perform :run_prompt, { "prompt" => "hi", "model" => "anthropic/claude-3.5-sonnet" }
+        perform :run_prompt, { "prompt" => "hi", "model" => "anthropic/claude-sonnet-4.6" }
         join_runner_thread
 
         # Scenario B: a tool-call turn followed by stop.
@@ -185,14 +185,14 @@ RSpec.describe "Assistant pipeline (Phase 18)" do
             ["stop", { "role" => "assistant", "content" => "all done" }]
           end
         end
-        perform :run_prompt, { "prompt" => "list", "model" => "anthropic/claude-3.5-sonnet" }
+        perform :run_prompt, { "prompt" => "list", "model" => "anthropic/claude-sonnet-4.6" }
         join_runner_thread
 
         # Scenario C: openrouter mid-stream error.
         allow(client).to receive(:stream_chat_completion).and_raise(
           OpenRouterClient::MidStreamError, "upstream error"
         )
-        perform :run_prompt, { "prompt" => "boom", "model" => "anthropic/claude-3.5-sonnet" }
+        perform :run_prompt, { "prompt" => "boom", "model" => "anthropic/claude-sonnet-4.6" }
         join_runner_thread
 
         types = captured.map { |_, p| p[:type] }
@@ -217,7 +217,7 @@ RSpec.describe "Assistant pipeline (Phase 18)" do
           OpenRouterClient::MidStreamError, "model upstream timeout"
         )
 
-        perform :run_prompt, { "prompt" => "x", "model" => "anthropic/claude-3.5-sonnet" }
+        perform :run_prompt, { "prompt" => "x", "model" => "anthropic/claude-sonnet-4.6" }
         join_runner_thread
 
         errors = captured.select { |_, p| p[:type] == "error" }
@@ -258,7 +258,7 @@ RSpec.describe "Assistant pipeline (Phase 18)" do
           end
         end
 
-        perform :run_prompt, { "prompt" => "x", "model" => "anthropic/claude-3.5-sonnet" }
+        perform :run_prompt, { "prompt" => "x", "model" => "anthropic/claude-sonnet-4.6" }
         join_runner_thread
 
         relevant = captured
@@ -296,7 +296,7 @@ RSpec.describe "Assistant pipeline (Phase 18)" do
           ["stop", { "role" => "assistant", "content" => "never reached" }]
         end
 
-        perform :run_prompt, { "prompt" => "x", "model" => "anthropic/claude-3.5-sonnet" }
+        perform :run_prompt, { "prompt" => "x", "model" => "anthropic/claude-sonnet-4.6" }
 
         thread = subscription.instance_variable_get(:@agent_thread)
         expect(thread).to be_a(Thread)
@@ -365,12 +365,12 @@ RSpec.describe "Assistant pipeline (Phase 18)" do
 
       runner_a = AgentRunner.new(
         user: user, device: device, prompt: "ping a",
-        model: "anthropic/claude-3.5-sonnet",
+        model: "anthropic/claude-sonnet-4.6",
         session_token: token_a, openrouter_client: client_a
       )
       runner_b = AgentRunner.new(
         user: user, device: device, prompt: "ping b",
-        model: "anthropic/claude-3.5-sonnet",
+        model: "anthropic/claude-sonnet-4.6",
         session_token: token_b, openrouter_client: client_b
       )
 

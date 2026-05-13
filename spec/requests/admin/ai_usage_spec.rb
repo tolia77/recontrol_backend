@@ -34,32 +34,32 @@ RSpec.describe "GET /admin/ai_usage", type: :request do
              started_at: day.beginning_of_day + 1.hour,
              input_tokens: 100,
              output_tokens: 50,
-             model: "anthropic/claude-3.5-sonnet")
+             model: "anthropic/claude-sonnet-4.6")
       create(:ai_session,
              user: client_user,
              started_at: day.beginning_of_day + 2.hours,
              input_tokens: 20,
              output_tokens: 30,
-             model: "anthropic/claude-3.5-sonnet")
+             model: "anthropic/claude-sonnet-4.6")
       create(:ai_session,
              user: client_user,
              started_at: day.beginning_of_day + 3.hours,
              input_tokens: 5,
              output_tokens: 5,
-             model: "openai/gpt-4o-mini")
+             model: "openai/gpt-5.4-mini")
 
       create(:ai_session,
              user: other_user,
              started_at: day.beginning_of_day + 1.hour,
              input_tokens: 10,
              output_tokens: 10,
-             model: "openai/gpt-4o-mini")
+             model: "openai/gpt-5.4-mini")
       create(:ai_session,
              user: other_user,
              started_at: day.beginning_of_day + 2.hours,
              input_tokens: 10,
              output_tokens: 10,
-             model: "anthropic/claude-3.5-sonnet")
+             model: "anthropic/claude-sonnet-4.6")
     end
 
     it "returns admin daily usage rows with required fields and deterministic top_model" do
@@ -75,10 +75,10 @@ RSpec.describe "GET /admin/ai_usage", type: :request do
       expect(row.keys).to include("user_id", "username", "day", "total_tokens", "session_count", "top_model")
       expect(row["total_tokens"]).to eq(210)
       expect(row["session_count"]).to eq(3)
-      expect(row["top_model"]).to eq("anthropic/claude-3.5-sonnet")
+      expect(row["top_model"]).to eq("anthropic/claude-sonnet-4.6")
 
       tie_row = body.find { |r| r["user_id"] == other_user.id && r["day"] == day.to_s }
-      expect(tie_row["top_model"]).to eq("anthropic/claude-3.5-sonnet")
+      expect(tie_row["top_model"]).to eq("anthropic/claude-sonnet-4.6")
     end
   end
 end

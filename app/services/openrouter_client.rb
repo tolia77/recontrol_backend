@@ -34,17 +34,17 @@ class OpenRouterClient
   # ──────────────────────────────────────────────────────────────────────────
   # Constants (D-02, AGENT-08, AGENT-09)
   # ──────────────────────────────────────────────────────────────────────────
-  DEFAULT_MODEL = ENV.fetch("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet").freeze
+  DEFAULT_MODEL = ENV.fetch("OPENROUTER_MODEL", "anthropic/claude-sonnet-4.6").freeze
 
   # AGENT-08: single source of truth for the operator-selectable model
   # allowlist. AssistantChannel#allowed_models reads this constant
   # (Plan 5 retires the Plan-1 defined?-guarded fallback).
   ALLOWED_MODELS = [
-    "anthropic/claude-3.5-sonnet",
-    "anthropic/claude-3.5-haiku",
-    "openai/gpt-4o",
-    "openai/gpt-4o-mini",
-    "google/gemini-2.0-flash"
+    "anthropic/claude-sonnet-4.6",
+    "anthropic/claude-haiku-4.5",
+    "openai/gpt-5.5-pro",
+    "openai/gpt-5.4-mini",
+    "google/gemini-2.5-flash"
   ].freeze
 
   # AGENT-09: operator-assistant role + tool-result-untrusted directive +

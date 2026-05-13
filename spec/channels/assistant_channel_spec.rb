@@ -56,11 +56,11 @@ RSpec.describe AssistantChannel, type: :channel do
     end
 
     it "transmits an accepted envelope with a SecureRandom.uuid session_token" do
-      perform :run_prompt, { "prompt" => "list /tmp", "model" => "anthropic/claude-3.5-sonnet" }
+      perform :run_prompt, { "prompt" => "list /tmp", "model" => "anthropic/claude-sonnet-4.6" }
       accepted = transmissions.find { |t| t["type"] == "accepted" }
       expect(accepted).not_to be_nil
       expect(accepted["session_token"]).to match(/\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/)
-      expect(accepted["model"]).to eq("anthropic/claude-3.5-sonnet")
+      expect(accepted["model"]).to eq("anthropic/claude-sonnet-4.6")
       subscription.instance_variable_get(:@agent_thread)&.join(1.0)
     end
 
@@ -72,7 +72,7 @@ RSpec.describe AssistantChannel, type: :channel do
     end
 
     it "rejects an empty prompt with type=error message=empty_prompt" do
-      perform :run_prompt, { "prompt" => "   ", "model" => "anthropic/claude-3.5-sonnet" }
+      perform :run_prompt, { "prompt" => "   ", "model" => "anthropic/claude-sonnet-4.6" }
       last = transmissions.last
       expect(last["type"]).to eq("error")
       expect(last["message"]).to eq("empty_prompt")
@@ -93,12 +93,12 @@ RSpec.describe AssistantChannel, type: :channel do
           user: owner,
           device: device,
           prompt: "list /tmp",
-          model: "anthropic/claude-3.5-sonnet",
+          model: "anthropic/claude-sonnet-4.6",
           session_token: match(/\A[0-9a-f-]{36}\z/)
         )
       ).and_return(fake_runner)
 
-      perform :run_prompt, { "prompt" => "list /tmp", "model" => "anthropic/claude-3.5-sonnet" }
+      perform :run_prompt, { "prompt" => "list /tmp", "model" => "anthropic/claude-sonnet-4.6" }
 
       thread = subscription.instance_variable_get(:@agent_thread)
       expect(thread).to be_a(Thread)
@@ -118,7 +118,7 @@ RSpec.describe AssistantChannel, type: :channel do
         original_thread_new.call(*args, &block)
       end
 
-      perform :run_prompt, { "prompt" => "x", "model" => "anthropic/claude-3.5-sonnet" }
+      perform :run_prompt, { "prompt" => "x", "model" => "anthropic/claude-sonnet-4.6" }
       subscription.instance_variable_get(:@agent_thread)&.join(1.0)
 
       # First event is the accepted transmit; the thread spawn happens after.
@@ -139,7 +139,7 @@ RSpec.describe AssistantChannel, type: :channel do
       allow(AgentRunner).to receive(:new).and_return(fake_runner)
       expect(fake_runner).to receive(:request_stop)
 
-      perform :run_prompt, { "prompt" => "x", "model" => "anthropic/claude-3.5-sonnet" }
+      perform :run_prompt, { "prompt" => "x", "model" => "anthropic/claude-sonnet-4.6" }
       perform :stop_loop
       subscription.instance_variable_get(:@agent_thread)&.join(1.0)
     end
@@ -243,7 +243,7 @@ RSpec.describe AssistantChannel, type: :channel do
         user: owner,
         device: device,
         started_at: Time.current,
-        model: "anthropic/claude-3.5-sonnet"
+        model: "anthropic/claude-sonnet-4.6"
       )
       runner = double("AgentRunner", ai_session: ai_session, request_stop: nil)
       subscription.instance_variable_set(:@agent_runner, runner)
@@ -273,7 +273,7 @@ RSpec.describe AssistantChannel, type: :channel do
         turn_count: 2,
         input_tokens: 100,
         output_tokens: 50,
-        model: "anthropic/claude-3.5-sonnet"
+        model: "anthropic/claude-sonnet-4.6"
       )
       runner = double("AgentRunner", ai_session: ai_session, request_stop: nil)
       subscription.instance_variable_set(:@agent_runner, runner)

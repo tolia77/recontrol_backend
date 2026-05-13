@@ -64,7 +64,7 @@ RSpec.describe AiSession, type: :model do
   describe "AUDIT-03: on device deletion the row survives with device_id=NULL" do
     it "nulls out device_id when the device is destroyed" do
       session = described_class.create!(user: user, device: device,
-                                        started_at: Time.current, model: "anthropic/claude-3.5-sonnet")
+                                        started_at: Time.current, model: "anthropic/claude-sonnet-4.6")
 
       device.destroy!
       session.reload

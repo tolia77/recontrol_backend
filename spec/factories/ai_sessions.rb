@@ -9,7 +9,7 @@ FactoryBot.define do
     turn_count { 1 }
     input_tokens { 50 }
     output_tokens { 50 }
-    model { "anthropic/claude-3.5-sonnet" }
+    model { "anthropic/claude-sonnet-4.6" }
     stop_reason { "completed" }
   end
 end

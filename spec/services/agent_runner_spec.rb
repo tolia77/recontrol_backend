@@ -9,7 +9,7 @@ RSpec.describe AgentRunner do
   let(:client)        { instance_double(OpenRouterClient) }
   let(:captured)      { [] }
 
-  def make_runner(prompt: "do a thing", model: "anthropic/claude-3.5-sonnet")
+  def make_runner(prompt: "do a thing", model: "anthropic/claude-sonnet-4.6")
     AgentRunner.new(
       user: user, device: device, prompt: prompt, model: model,
       session_token: session_token, openrouter_client: client
@@ -394,7 +394,7 @@ RSpec.describe AgentRunner do
     it "interpolates linux platform_name and the linux allow-list keys" do
       runner = AgentRunner.new(
         user: user, device: linux_device, prompt: "go",
-        model: "anthropic/claude-3.5-sonnet", session_token: SecureRandom.uuid, openrouter_client: client
+        model: "anthropic/claude-sonnet-4.6", session_token: SecureRandom.uuid, openrouter_client: client
       )
       system_msg = runner.instance_variable_get(:@messages)[0][:content]
       expect(system_msg).to include("Allowed read-only commands on this linux desktop:")
@@ -408,7 +408,7 @@ RSpec.describe AgentRunner do
     it "interpolates windows platform_name and the windows pathmap keys" do
       runner = AgentRunner.new(
         user: user, device: windows_device, prompt: "go",
-        model: "anthropic/claude-3.5-sonnet", session_token: SecureRandom.uuid, openrouter_client: client
+        model: "anthropic/claude-sonnet-4.6", session_token: SecureRandom.uuid, openrouter_client: client
       )
       system_msg = runner.instance_variable_get(:@messages)[0][:content]
       expect(system_msg).to include("Allowed read-only commands on this windows desktop:")
@@ -421,7 +421,7 @@ RSpec.describe AgentRunner do
       nil_platform_device.save!(validate: false)
       runner = AgentRunner.new(
         user: user, device: nil_platform_device, prompt: "go",
-        model: "anthropic/claude-3.5-sonnet", session_token: SecureRandom.uuid, openrouter_client: client
+        model: "anthropic/claude-sonnet-4.6", session_token: SecureRandom.uuid, openrouter_client: client
       )
       system_msg = runner.instance_variable_get(:@messages)[0][:content]
       expect(system_msg).to include("Allowed read-only commands on this unknown desktop: (none).")
@@ -432,7 +432,7 @@ RSpec.describe AgentRunner do
     let(:runner) do
       AgentRunner.new(
         user: user, device: device, prompt: "go",
-        model: "anthropic/claude-3.5-sonnet", session_token: SecureRandom.uuid, openrouter_client: client
+        model: "anthropic/claude-sonnet-4.6", session_token: SecureRandom.uuid, openrouter_client: client
       )
     end
 
@@ -455,7 +455,7 @@ RSpec.describe AgentRunner do
     let(:runner) do
       AgentRunner.new(
         user: user, device: device, prompt: "go",
-        model: "anthropic/claude-3.5-sonnet", session_token: SecureRandom.uuid, openrouter_client: client
+        model: "anthropic/claude-sonnet-4.6", session_token: SecureRandom.uuid, openrouter_client: client
       )
     end
 
@@ -515,7 +515,7 @@ RSpec.describe AgentRunner do
       expect(sess.started_at).to be_present
       expect(sess.ended_at).to be_present
       expect(sess.stop_reason).to eq("completed")
-      expect(sess.model).to eq("anthropic/claude-3.5-sonnet")
+      expect(sess.model).to eq("anthropic/claude-sonnet-4.6")
       expect(sess.input_tokens).to eq(50)
       expect(sess.output_tokens).to eq(100)
       expect(sess.turn_count).to eq(0)
@@ -529,7 +529,7 @@ RSpec.describe AgentRunner do
     def make_admin_runner
       AgentRunner.new(
         user: admin_user, device: admin_device, prompt: "go",
-        model: "anthropic/claude-3.5-sonnet", session_token: SecureRandom.uuid, openrouter_client: client
+        model: "anthropic/claude-sonnet-4.6", session_token: SecureRandom.uuid, openrouter_client: client
       )
     end
 
@@ -556,7 +556,7 @@ RSpec.describe AgentRunner do
     def make_client_runner
       AgentRunner.new(
         user: client_user, device: client_device, prompt: "go",
-        model: "anthropic/claude-3.5-sonnet", session_token: SecureRandom.uuid, openrouter_client: client
+        model: "anthropic/claude-sonnet-4.6", session_token: SecureRandom.uuid, openrouter_client: client
       )
     end
 
@@ -592,7 +592,7 @@ RSpec.describe AgentRunner do
     def make_client_runner
       AgentRunner.new(
         user: client_user, device: client_device, prompt: "go",
-        model: "anthropic/claude-3.5-sonnet", session_token: SecureRandom.uuid, openrouter_client: client
+        model: "anthropic/claude-sonnet-4.6", session_token: SecureRandom.uuid, openrouter_client: client
       )
     end
 
