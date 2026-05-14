@@ -299,7 +299,8 @@ class AgentRunner
            name: name, label: tool_klass::HUMAN_LABEL,
            args: args, tool_call_id: tool_call_id)
 
-      result = tool_klass.new(device: @device, agent_runner: self).call(args.is_a?(Hash) ? args.transform_keys(&:to_sym) : {})
+      result = tool_klass.new(device: @device, agent_runner: self, tool_call_id: tool_call_id)
+        .call(args.is_a?(Hash) ? args.transform_keys(&:to_sym) : {})
 
       # STREAM-07: broadcast the result envelope; raw OpenRouter JSON never broadcast.
       emit(type: "tool_call_result",

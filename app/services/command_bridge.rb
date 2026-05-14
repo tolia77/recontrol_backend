@@ -11,12 +11,13 @@ module CommandBridge
   # AgentRunner / AiTools::Base#call invoke this. Returns either the desktop's
   # parsed response hash or `{ error: "tool_timeout" }`. Never raises on timeout.
   #
-  # D-06 / D-07: tool_call_id MUST be a fresh SecureRandom.uuid per call -- the
-  # caller (AiTools::Base) generates it and passes it in. On the desktop wire
-  # the same value is sent as `id` (the existing request/response correlation
-  # field used by every other command); the name `tool_call_id` only lives in
-  # backend-internal code and in frontend-facing broadcasts (where it carries
-  # the model's OpenRouter tool_call id semantics).
+  # D-06 / D-07: tool_call_id is the OpenRouter `tool_calls[].id` propagated
+  # through AgentRunner -> AiTools::Base#call (default kwarg falls back to
+  # SecureRandom.uuid for standalone callers without an AgentRunner). On the
+  # desktop wire the same value is sent as `id` (the existing request/response
+  # correlation field used by every other command); on frontend broadcasts it
+  # ties requires_confirmation / tool_call_start / tool_call_result together
+  # so the transcript reducer renders one row per tool call.
   # D-09: on return-or-timeout, the registry entry is deleted in the ensure block.
   def dispatch(device:, payload:, tool_call_id:)
     queue = AgentToolCallRegistry.register(tool_call_id)

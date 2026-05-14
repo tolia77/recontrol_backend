@@ -98,9 +98,16 @@ module AiTools
       }
     end
 
-    def initialize(device:, agent_runner: nil)
+    # tool_call_id: AgentRunner passes the OpenRouter `tool_calls[].id` so the
+    # requires_confirmation, tool_call_start, and tool_call_result envelopes
+    # all share one id -- the frontend transcript reducer keys rows on
+    # tool_call_id (Phase 20 D-05 "one row per tool_call_id"). The fallback
+    # SecureRandom.uuid keeps standalone tool tests (no AgentRunner) and any
+    # direct callers working without modification.
+    def initialize(device:, agent_runner: nil, tool_call_id: nil)
       @device = device
       @agent_runner = agent_runner
+      @tool_call_id = tool_call_id
     end
 
     # Template method: validate -> policy_verdict -> (optional confirmation gate)
@@ -118,11 +125,7 @@ module AiTools
       return { error: "invalid_arguments", details: result.errors.to_h } if result.failure?
       validated = result.to_h
 
-      # D-11 (Phase 20 CONTEXT): mint tool_call_id BEFORE the policy gate so the
-      # requires_confirmation envelope can carry it. The frontend transcript reducer
-      # keys rows on tool_call_id (Phase 20 D-05 "one row per tool_call_id"); the
-      # confirmation card and the eventual tool_call_result share the same row.
-      tool_call_id = SecureRandom.uuid
+      tool_call_id = @tool_call_id || SecureRandom.uuid
 
       verdict = policy_verdict(validated)
       case verdict.decision
